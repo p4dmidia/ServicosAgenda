@@ -1,0 +1,6 @@
+{
+  "name": "Serviços Agenda",
+  "description": "Plataforma de gestão e agendamento para clínicas e estética - Clínica Bella Vita",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
