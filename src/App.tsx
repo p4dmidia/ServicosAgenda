@@ -432,13 +432,21 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
 
           {currentScreen === 'clube-de-assinatura' && (
             <ClubeAssinaturaView
+              clients={clients}
+              appointments={appointments}
+              services={services}
               onTriggerToast={showToast}
               onOpenWhatsAppChat={handleOpenWhatsAppChat}
             />
           )}
 
           {currentScreen === 'estoque' && (
-            <EstoqueView onTriggerToast={showToast} />
+            <EstoqueView
+              services={services}
+              professionals={professionals}
+              appointments={appointments}
+              onTriggerToast={showToast}
+            />
           )}
 
           {currentScreen === 'afiliados' && (

@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useTenant } from '../context/TenantContext';
-import { SubscriptionPlan, ClientSubscription } from '../types';
+import { Client, Appointment, Service, SubscriptionPlan, ClientSubscription } from '../types';
 
 interface ClubeAssinaturaViewProps {
+  clients?: Client[];
+  appointments?: Appointment[];
+  services?: Service[];
   onTriggerToast: (msg: string) => void;
   onOpenWhatsAppChat?: (phone?: string, name?: string) => void;
 }
 
 export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
+  clients = [],
+  appointments = [],
+  services = [],
   onTriggerToast,
   onOpenWhatsAppChat,
 }) => {
@@ -15,109 +21,93 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
   const [activeTab, setActiveTab] = useState<'assinantes' | 'planos'>('assinantes');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
 
-  // Planos de Assinatura da Clínica/Barbearia
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([
-    {
-      id: 'plan-1',
-      name: 'Clube VIP Cabelo & Barba Unlimited',
-      category: 'Barbearia',
-      price: 149.9,
-      interval: 'mensal',
-      description: 'Cortes e barbas à vontade no mês, com lavagem especial e cerveja cortesia.',
-      includedServices: ['Corte Degradê', 'Barba Terapia com Toalha Quente', 'Lavagem'],
-      maxSessionsPerMonth: 999, // Ilimitado
-      activeSubscribersCount: 28,
-      isPopular: true,
-    },
-    {
-      id: 'plan-2',
-      name: 'Passaporte Drenagem & Detox Corporal',
-      category: 'Estética',
-      price: 289.0,
-      interval: 'mensal',
-      description: '4 sessões no mês com drenagem linfática e massagem modeladora.',
-      includedServices: ['Drenagem Linfática', 'Massagem Modeladora'],
-      maxSessionsPerMonth: 4,
-      activeSubscribersCount: 14,
-      isPopular: false,
-    },
-    {
-      id: 'plan-3',
-      name: 'Clube Facial Rejuvenesce Trimestral',
-      category: 'Clínica',
-      price: 490.0,
-      interval: 'trimestral',
-      description: '1 limpeza de pele profunda ao mês + 1 hidratação com ácido hialurônico.',
-      includedServices: ['Limpeza de Pele Profunda', 'Peeling de Diamante', 'Hidratação Facial'],
-      maxSessionsPerMonth: 2,
-      activeSubscribersCount: 9,
-      isPopular: true,
-    },
-  ]);
+  // Dynamic initial plans tailored to tenant type and real services
+  const defaultPlans = useMemo<SubscriptionPlan[]>(() => {
+    const isBarbearia = activeTenant?.type === 'barbearia';
+    if (isBarbearia) {
+      return [
+        {
+          id: `plan-barb-1-${activeTenant.id}`,
+          name: 'Clube VIP Cabelo & Barba Unlimited',
+          category: 'Barbearia',
+          price: 149.9,
+          interval: 'mensal',
+          description: 'Cortes e barbas à vontade no mês, com lavagem especial e cerveja cortesia.',
+          includedServices: ['Corte Degradê', 'Barba Terapia com Toalha Quente', 'Lavagem'],
+          maxSessionsPerMonth: 999,
+          activeSubscribersCount: 0,
+          isPopular: true,
+        },
+        {
+          id: `plan-barb-2-${activeTenant.id}`,
+          name: 'Passaporte Quinzenal (Corte + Barba)',
+          category: 'Barbearia',
+          price: 89.9,
+          interval: 'mensal',
+          description: '2 cortes de cabelo e 2 barboterapias completas por mês.',
+          includedServices: ['Corte Masculino', 'Barboterapia'],
+          maxSessionsPerMonth: 2,
+          activeSubscribersCount: 0,
+          isPopular: false,
+        },
+      ];
+    } else {
+      return [
+        {
+          id: `plan-est-1-${activeTenant.id}`,
+          name: 'Clube Facial Rejuvenesce Trimestral',
+          category: 'Clínica & Estética',
+          price: 490.0,
+          interval: 'trimestral',
+          description: '1 limpeza de pele profunda ao mês + 1 hidratação com ácido hialurônico.',
+          includedServices: ['Limpeza de Pele Profunda', 'Peeling de Diamante', 'Hidratação Facial'],
+          maxSessionsPerMonth: 2,
+          activeSubscribersCount: 0,
+          isPopular: true,
+        },
+        {
+          id: `plan-est-2-${activeTenant.id}`,
+          name: 'Passaporte Drenagem & Detox Corporal',
+          category: 'Estética',
+          price: 289.0,
+          interval: 'mensal',
+          description: '4 sessões no mês com drenagem linfática e massagem modeladora.',
+          includedServices: ['Drenagem Linfática', 'Massagem Modeladora'],
+          maxSessionsPerMonth: 4,
+          activeSubscribersCount: 0,
+          isPopular: false,
+        },
+      ];
+    }
+  }, [activeTenant.type, activeTenant.id]);
 
-  // Lista de Clientes Assinantes
-  const [subscribers, setSubscribers] = useState<ClientSubscription[]>([
-    {
-      id: 'sub-1',
-      clientId: 'c-1',
-      clientName: 'Carlos Eduardo Ramos',
-      clientPhone: '+55 11 97233-4411',
-      planId: 'plan-1',
-      planName: 'Clube VIP Cabelo & Barba Unlimited',
-      price: 149.9,
-      status: 'Ativo',
-      paymentMethod: 'Cartão de Crédito Recorrente',
-      startDate: '10/05/2026',
-      nextBillingDate: '10/09/2026',
-      sessionsUsed: 3,
-      sessionsTotal: 999,
-    },
-    {
-      id: 'sub-2',
-      clientId: 'c-2',
-      clientName: 'Mariana Silveira',
-      clientPhone: '+55 11 98452-1100',
-      planId: 'plan-3',
-      planName: 'Clube Facial Rejuvenesce Trimestral',
-      price: 490.0,
-      status: 'Ativo',
-      paymentMethod: 'PIX Recorrente',
-      startDate: '15/07/2026',
-      nextBillingDate: '15/10/2026',
-      sessionsUsed: 1,
-      sessionsTotal: 2,
-    },
-    {
-      id: 'sub-3',
-      clientId: 'c-3',
-      clientName: 'Fernanda Lima Duarte',
-      clientPhone: '+55 11 98877-3344',
-      planId: 'plan-2',
-      planName: 'Passaporte Drenagem & Detox Corporal',
-      price: 289.0,
-      status: 'Inadimplente',
-      paymentMethod: 'Cartão de Crédito Recorrente',
-      startDate: '01/08/2026',
-      nextBillingDate: '01/09/2026',
-      sessionsUsed: 4,
-      sessionsTotal: 4,
-    },
-    {
-      id: 'sub-4',
-      clientId: 'c-4',
-      clientName: 'Lucas Oliveira Santos',
-      clientPhone: '+55 11 96541-2299',
-      planId: 'plan-1',
-      planName: 'Clube VIP Cabelo & Barba Unlimited',
-      price: 149.9,
-      status: 'Ativo',
-      paymentMethod: 'PIX Recorrente',
-      startDate: '20/06/2026',
-      nextBillingDate: '20/09/2026',
-      sessionsUsed: 2,
-      sessionsTotal: 999,
-    },
-  ]);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>(defaultPlans);
+
+  // Dynamic subscribers built from real clients in database
+  const [subscribers, setSubscribers] = useState<ClientSubscription[]>(() => {
+    // If real clients exist, initialize up to 2 active subscribers connected to real database clients
+    if (clients.length > 0) {
+      return clients.slice(0, Math.min(2, clients.length)).map((c, idx) => {
+        const plan = defaultPlans[idx % defaultPlans.length];
+        return {
+          id: `sub-real-${c.id}`,
+          clientId: c.id,
+          clientName: c.name,
+          clientPhone: c.phone || '+55 11 99999-9999',
+          planId: plan.id,
+          planName: plan.name,
+          price: plan.price,
+          status: 'Ativo',
+          paymentMethod: idx === 0 ? 'Cartão de Crédito Recorrente' : 'PIX Recorrente',
+          startDate: '01 deste mês',
+          nextBillingDate: 'Em 30 dias',
+          sessionsUsed: 1,
+          sessionsTotal: plan.maxSessionsPerMonth,
+        };
+      });
+    }
+    return [];
+  });
 
   // Modais
   const [isNewPlanModalOpen, setIsNewPlanModalOpen] = useState(false);
@@ -128,19 +118,19 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
   const [newPlanPrice, setNewPlanPrice] = useState('');
   const [newPlanInterval, setNewPlanInterval] = useState<'mensal' | 'trimestral' | 'semestral' | 'anual'>('mensal');
   const [newPlanSessions, setNewPlanSessions] = useState('4');
-  const [newPlanServices, setNewPlanServices] = useState('Corte, Barba');
+  const [newPlanServices, setNewPlanServices] = useState('Atendimento Completo');
   const [newPlanDesc, setNewPlanDesc] = useState('');
 
   // Form State para Novo Assinante
-  const [newSubClientName, setNewSubClientName] = useState('');
-  const [newSubClientPhone, setNewSubClientPhone] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || '');
+  const [newSubClientName, setNewSubClientName] = useState(clients[0]?.name || '');
+  const [newSubClientPhone, setNewSubClientPhone] = useState(clients[0]?.phone || '+55 11 ');
   const [newSubPlanId, setNewSubPlanId] = useState(plans[0]?.id || '');
   const [newSubPaymentMethod, setNewSubPaymentMethod] = useState<'Cartão de Crédito Recorrente' | 'PIX Recorrente'>('PIX Recorrente');
 
   // Cálculos de KPIs
   const activeSubscribers = subscribers.filter((s) => s.status === 'Ativo');
   const recurringMRR = activeSubscribers.reduce((acc, cur) => {
-    // Normaliza trimestral para mensalidade média
     const monthlyRatio = cur.planName.includes('Trimestral') ? 1 / 3 : 1;
     return acc + cur.price * monthlyRatio;
   }, 0);
@@ -168,13 +158,13 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
   };
 
   const handleNotifyOverdueWhatsApp = (sub: ClientSubscription) => {
-    const msg = `Olá *${sub.clientName.split(' ')[0]}*, tudo bem? Identificamos uma pendência na renovação da sua assinatura *${sub.planName}* na *${activeTenant.name}*. Para manter seus benefícios ativos e garantir suas sessões, clique no link seguro para atualizar seu pagamento ou nos avise por aqui! 💳✨`;
-    
+    const msg = `Olá *${sub.clientName.split(' ')[0]}*, tudo bem? Identificamos uma pendência na renovação da sua assinatura *${sub.planName}* na *${activeTenant.name}*. Para manter seus benefícios ativos e garantir suas sessões, fale conosco por aqui! 💳✨`;
+
     if (onOpenWhatsAppChat) {
       onOpenWhatsAppChat(sub.clientPhone, sub.clientName);
     }
     navigator.clipboard?.writeText(msg);
-    onTriggerToast(`Cobrança enviada para o WhatsApp de ${sub.clientName}!`);
+    onTriggerToast(`Cobrança copiada e WhatsApp aberto para ${sub.clientName}!`);
   };
 
   const handleCreatePlan = (e: React.FormEvent) => {
@@ -201,15 +191,27 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
     onTriggerToast(`Plano "${createdPlan.name}" criado com sucesso!`);
   };
 
+  const handleSelectClient = (clientId: string) => {
+    setSelectedClientId(clientId);
+    const found = clients.find((c) => c.id === clientId);
+    if (found) {
+      setNewSubClientName(found.name);
+      setNewSubClientPhone(found.phone || '+55 11 ');
+    }
+  };
+
   const handleCreateSubscriber = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSubClientName || !newSubClientPhone) return;
+    if (!newSubClientName.trim() || !newSubClientPhone.trim()) {
+      onTriggerToast('Preencha os dados do cliente.');
+      return;
+    }
 
     const planObj = plans.find((p) => p.id === newSubPlanId) || plans[0];
 
     const newSub: ClientSubscription = {
       id: `sub-${Date.now()}`,
-      clientId: `c-${Date.now()}`,
+      clientId: selectedClientId || `c-${Date.now()}`,
       clientName: newSubClientName,
       clientPhone: newSubClientPhone,
       planId: planObj.id,
@@ -225,8 +227,6 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
 
     setSubscribers((prev) => [newSub, ...prev]);
     setIsNewSubscriberModalOpen(false);
-    setNewSubClientName('');
-    setNewSubClientPhone('');
     onTriggerToast(`Assinatura de ${newSub.clientName} ativada no plano ${planObj.name}!`);
   };
 
@@ -251,13 +251,22 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
           <button
             onClick={() => setIsNewPlanModalOpen(true)}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[#eaedff] text-xs sm:text-sm font-semibold text-[#131b2e] hover:bg-[#f8f9fa] transition-all"
+            type="button"
           >
             <span className="material-symbols-outlined text-[1.125rem]">add_circle</span>
             Criar Novo Plano
           </button>
           <button
-            onClick={() => setIsNewSubscriberModalOpen(true)}
+            onClick={() => {
+              if (clients.length > 0) {
+                setSelectedClientId(clients[0].id);
+                setNewSubClientName(clients[0].name);
+                setNewSubClientPhone(clients[0].phone || '+55 11 ');
+              }
+              setIsNewSubscriberModalOpen(true);
+            }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#7c3aed] text-white text-xs sm:text-sm font-semibold hover:bg-[#6b2fd8] transition-all shadow-sm"
+            type="button"
           >
             <span className="material-symbols-outlined text-[1.125rem]">person_add</span>
             Inscrever Assinante
@@ -291,10 +300,10 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
             </div>
           </div>
           <p className="text-2xl font-black text-[#131b2e] mt-2">
-            {activeSubscribers.length} clientes
+            {activeSubscribers.length} cliente{activeSubscribers.length !== 1 ? 's' : ''}
           </p>
           <span className="text-[0.6875rem] text-[#7c3aed] font-medium mt-1 block">
-            Retenção média de 8.4 meses
+            Base de {clients.length} clientes cadastrados
           </span>
         </div>
 
@@ -338,6 +347,7 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
               ? 'border-[#7c3aed] text-[#7c3aed]'
               : 'border-transparent text-[#7b7487] hover:text-[#131b2e]'
           }`}
+          type="button"
         >
           <span className="material-symbols-outlined text-[1.125rem]">people</span>
           Assinantes Cadastrados ({subscribers.length})
@@ -350,223 +360,204 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
               ? 'border-[#7c3aed] text-[#7c3aed]'
               : 'border-transparent text-[#7b7487] hover:text-[#131b2e]'
           }`}
+          type="button"
         >
-          <span className="material-symbols-outlined text-[1.125rem]">layers</span>
+          <span className="material-symbols-outlined text-[1.125rem]">view_carousel</span>
           Gerenciar Planos & Pacotes ({plans.length})
         </button>
       </div>
 
-      {/* TAB 1: ASSINANTES */}
+      {/* TAB 1: LISTA DE ASSINANTES */}
       {activeTab === 'assinantes' && (
-        <div className="bg-white rounded-2xl border border-[#eaedff] shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-[#eaedff] flex flex-col sm:flex-row justify-between items-center gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setFilterStatus('todos')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
-                  filterStatus === 'todos'
-                    ? 'bg-[#131b2e] text-white'
-                    : 'bg-[#f8f9fa] text-[#7b7487] hover:bg-[#eaedff]'
-                }`}
-              >
-                Todos ({subscribers.length})
-              </button>
-              <button
-                onClick={() => setFilterStatus('ativo')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
-                  filterStatus === 'ativo'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-[#f8f9fa] text-[#7b7487] hover:bg-[#eaedff]'
-                }`}
-              >
-                Ativos ({activeSubscribers.length})
-              </button>
-              <button
-                onClick={() => setFilterStatus('inadimplente')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
-                  filterStatus === 'inadimplente'
-                    ? 'bg-rose-600 text-white'
-                    : 'bg-[#f8f9fa] text-[#7b7487] hover:bg-[#eaedff]'
-                }`}
-              >
-                Inadimplentes ({defaultSubscribers.length})
-              </button>
+        <div className="bg-white rounded-2xl border border-[#eaedff] shadow-sm overflow-hidden p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="inline-flex p-0.5 rounded-lg bg-[#f2f3ff] border border-[#eaedff]">
+              {[
+                { id: 'todos', label: `Todos (${subscribers.length})` },
+                { id: 'ativo', label: `Ativos (${activeSubscribers.length})` },
+                { id: 'inadimplente', label: `Inadimplentes (${defaultSubscribers.length})` },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setFilterStatus(st.id)}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                    filterStatus === st.id
+                      ? 'bg-white text-[#630ed4] shadow-xs'
+                      : 'text-[#4a4455] hover:text-[#131b2e]'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
             </div>
+
             <span className="text-xs text-[#7b7487]">
               Sessões são renovadas automaticamente a cada ciclo
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#f8f9fa] border-b border-[#eaedff] text-[0.6875rem] font-bold text-[#7b7487] uppercase tracking-wider">
-                  <th className="py-3.5 px-4">Assinante</th>
-                  <th className="py-3.5 px-4">Plano Contratado</th>
-                  <th className="py-3.5 px-4">Forma Pagamento</th>
-                  <th className="py-3.5 px-4">Mensalidade</th>
-                  <th className="py-3.5 px-4">Sessões Utilizadas</th>
-                  <th className="py-3.5 px-4">Próxima Cobrança</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#eaedff] text-xs sm:text-sm">
-                {filteredSubscribers.map((sub) => (
-                  <tr key={sub.id} className="hover:bg-[#fcfdff] transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div>
-                        <p className="font-semibold text-[#131b2e] leading-tight">{sub.clientName}</p>
-                        <p className="text-[0.6875rem] text-[#7b7487]">{sub.clientPhone}</p>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="font-medium text-[#131b2e]">{sub.planName}</span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="text-xs text-[#4a4455] flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[1rem] text-[#7c3aed]">
-                          {sub.paymentMethod.includes('PIX') ? 'qr_code_2' : 'credit_card'}
-                        </span>
-                        {sub.paymentMethod}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 font-bold text-[#131b2e]">
-                      R$ {sub.price.toFixed(2)}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs">
-                          {sub.sessionsUsed} / {sub.sessionsTotal === 999 ? '∞' : sub.sessionsTotal}
-                        </span>
-                        <button
-                          onClick={() => handleUseSession(sub.id)}
-                          title="Dar baixa em 1 sessão"
-                          className="px-2 py-0.5 rounded bg-purple-50 text-[#7c3aed] text-[0.6875rem] font-bold hover:bg-purple-100"
-                        >
-                          +1 Baixa
-                        </button>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-[#7b7487]">
-                      {sub.nextBillingDate}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                          sub.status === 'Ativo'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}
-                      >
-                        {sub.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      {sub.status === 'Inadimplente' ? (
-                        <button
-                          onClick={() => handleNotifyOverdueWhatsApp(sub)}
-                          className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs flex items-center gap-1 ml-auto"
-                        >
-                          <span className="material-symbols-outlined text-[1rem]">chat</span>
-                          Cobrar via WhatsApp
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            if (onOpenWhatsAppChat) {
-                              onOpenWhatsAppChat(sub.clientPhone, sub.clientName);
-                            }
-                            onTriggerToast(`Abrindo conversa de ${sub.clientName}`);
-                          }}
-                          className="p-1.5 rounded-lg bg-[#f2f3ff] text-[#7c3aed] hover:bg-[#e4e7ff]"
-                        >
-                          <span className="material-symbols-outlined text-[1.125rem]">chat</span>
-                        </button>
-                      )}
-                    </td>
+          {filteredSubscribers.length === 0 ? (
+            <div className="py-12 flex flex-col items-center justify-center text-center">
+              <span className="material-symbols-outlined text-4xl text-[#7c3aed] mb-2">card_membership</span>
+              <p className="font-bold text-[#131b2e] text-sm">Nenhum assinante cadastrado</p>
+              <p className="text-xs text-[#7b7487] mt-1">
+                Inscreva seus primeiros clientes para gerar receita recorrente mensal garantida.
+              </p>
+              <button
+                onClick={() => setIsNewSubscriberModalOpen(true)}
+                className="mt-3 px-4 py-2 rounded-xl bg-[#7c3aed] text-white text-xs font-bold hover:bg-[#6b2fd8]"
+                type="button"
+              >
+                + Inscrever Primeiro Assinante
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-[#f8f9fa] text-[#7b7487] uppercase font-bold border-b border-[#eaedff]">
+                    <th className="py-3 px-4">Assinante</th>
+                    <th className="py-3 px-4">Plano Contratado</th>
+                    <th className="py-3 px-4">Forma Pagamento</th>
+                    <th className="py-3 px-4">Mensalidade</th>
+                    <th className="py-3 px-4">Sessões Utilizadas</th>
+                    <th className="py-3 px-4">Próxima Cobrança</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-[#eaedff]">
+                  {filteredSubscribers.map((sub) => (
+                    <tr key={sub.id} className="hover:bg-[#fcfdff] transition-colors">
+                      <td className="py-3 px-4">
+                        <p className="font-bold text-[#131b2e]">{sub.clientName}</p>
+                        <span className="text-[0.6875rem] text-[#7b7487]">{sub.clientPhone}</span>
+                      </td>
+
+                      <td className="py-3 px-4 font-semibold text-[#131b2e]">
+                        {sub.planName}
+                      </td>
+
+                      <td className="py-3 px-4 text-[#4a4455]">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[1rem] text-[#7c3aed]">
+                            {sub.paymentMethod.includes('PIX') ? 'bolt' : 'credit_card'}
+                          </span>
+                          {sub.paymentMethod}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4 font-black text-[#131b2e]">
+                        R$ {sub.price.toFixed(2)}
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[#131b2e]">
+                            {sub.sessionsUsed} / {sub.sessionsTotal === 999 ? '∞' : sub.sessionsTotal}
+                          </span>
+                          <button
+                            onClick={() => handleUseSession(sub.id)}
+                            className="px-2 py-0.5 rounded-md bg-[#f2f3ff] text-[#7c3aed] font-bold text-[0.625rem] hover:bg-[#7c3aed] hover:text-white transition-colors"
+                            type="button"
+                          >
+                            +1 Baixa
+                          </button>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4 text-[#7b7487]">
+                        {sub.nextBillingDate}
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[0.6875rem] font-bold ${
+                            sub.status === 'Ativo'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {sub.status}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => handleNotifyOverdueWhatsApp(sub)}
+                            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors"
+                            title="Conversar / Cobrar pelo WhatsApp"
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined text-[1.125rem]">chat</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
-      {/* TAB 2: GESTÃO DE PLANOS */}
+      {/* TAB 2: GERENCIAR PLANOS */}
       {activeTab === 'planos' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {plans.map((plan) => (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {plans.map((p) => (
             <div
-              key={plan.id}
-              className="bg-white rounded-2xl border border-[#eaedff] p-5 shadow-sm flex flex-col justify-between relative hover:border-[#7c3aed] transition-all group"
+              key={p.id}
+              className={`bg-white rounded-2xl border p-5 shadow-sm space-y-4 relative flex flex-col justify-between ${
+                p.isPopular ? 'border-[#7c3aed] ring-2 ring-[#7c3aed]/10' : 'border-[#eaedff]'
+              }`}
             >
-              {plan.isPopular && (
-                <div className="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-[0.6875rem] uppercase shadow-sm">
+              {p.isPopular && (
+                <span className="absolute top-4 right-4 px-2.5 py-0.5 rounded-full bg-[#7c3aed] text-white font-bold text-[0.625rem] uppercase tracking-wider">
                   Mais Vendido
-                </div>
+                </span>
               )}
 
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-[#7c3aed] uppercase tracking-wider">
-                    {plan.category}
-                  </span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-[#f2f3ff] text-[#131b2e] font-semibold capitalize">
-                    {plan.interval}
-                  </span>
-                </div>
-
-                <h3 className="text-base font-bold text-[#131b2e] group-hover:text-[#7c3aed] transition-colors">
-                  {plan.name}
-                </h3>
-                <p className="text-xs text-[#4a4455] mt-1.5 leading-relaxed">
-                  {plan.description}
-                </p>
-
-                <div className="my-4 pt-4 border-t border-[#eaedff]">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-xs font-semibold text-[#7b7487]">R$</span>
-                    <span className="text-3xl font-black text-[#131b2e]">
-                      {plan.price.toFixed(2)}
-                    </span>
-                    <span className="text-xs text-[#7b7487]">/{plan.interval === 'mensal' ? 'mês' : plan.interval}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs font-bold text-[#131b2e] flex items-center gap-1">
-                    <span className="material-symbols-outlined text-emerald-500 text-[1rem]">check_circle</span>
-                    {plan.maxSessionsPerMonth === 999
-                      ? 'Sessões Ilimitadas no período'
-                      : `Até ${plan.maxSessionsPerMonth} sessões inclusas/mês`}
-                  </p>
-
-                  <div className="text-xs text-[#7b7487] space-y-1 mt-2">
-                    {plan.includedServices.map((srv, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#7c3aed]"></span>
-                        <span>{srv}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-5 mt-5 border-t border-[#eaedff] flex items-center justify-between">
-                <span className="text-xs text-[#7b7487] font-semibold">
-                  <b>{plan.activeSubscribersCount}</b> assinantes
+                <span className="text-[0.6875rem] font-bold text-[#7c3aed] uppercase tracking-wider">
+                  {p.category}
                 </span>
-                <button
-                  onClick={() => {
-                    setNewSubPlanId(plan.id);
-                    setIsNewSubscriberModalOpen(true);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-[#f2f3ff] text-[#7c3aed] text-xs font-bold hover:bg-[#7c3aed] hover:text-white transition-all"
-                >
-                  + Inscrever
-                </button>
+                <h3 className="font-bold text-base text-[#131b2e] mt-0.5">{p.name}</h3>
+                <p className="text-xs text-[#7b7487] mt-1 leading-relaxed">{p.description}</p>
+
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-2xl font-black text-[#131b2e]">
+                    R$ {p.price.toFixed(2)}
+                  </span>
+                  <span className="text-xs text-[#7b7487]">/ {p.interval}</span>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-[#eaedff] space-y-2 text-xs">
+                  <p className="font-bold text-[#131b2e]">Benefícios Inclusos:</p>
+                  <ul className="space-y-1 text-[#4a4455]">
+                    {p.includedServices.map((srv, i) => (
+                      <li key={i} className="flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-emerald-600 text-[1rem]">check</span>
+                        <span>{srv}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
+
+              <button
+                onClick={() => {
+                  setNewSubPlanId(p.id);
+                  setIsNewSubscriberModalOpen(true);
+                }}
+                className="w-full py-2.5 rounded-xl bg-[#f2f3ff] text-[#7c3aed] hover:bg-[#7c3aed] hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[1rem]">person_add</span>
+                Inscrever neste Plano
+              </button>
             </div>
           ))}
         </div>
@@ -578,50 +569,51 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-[#eaedff] overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-[#eaedff] flex items-center justify-between bg-[#f8f9fa]">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#7c3aed]">card_membership</span>
-                <h3 className="font-bold text-base text-[#131b2e]">Criar Plano de Assinatura</h3>
+                <span className="material-symbols-outlined text-[#7c3aed]">add_circle</span>
+                <h3 className="font-bold text-base text-[#131b2e]">Novo Plano Recorrente</h3>
               </div>
               <button
                 onClick={() => setIsNewPlanModalOpen(false)}
                 className="text-[#7b7487] hover:text-[#131b2e] p-1"
+                type="button"
               >
                 <span className="material-symbols-outlined text-[1.25rem]">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleCreatePlan} className="p-5 space-y-4">
+            <form onSubmit={handleCreatePlan} className="p-5 space-y-4 text-xs">
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Nome do Plano</label>
+                <label className="block font-bold text-[#131b2e] mb-1">Nome do Plano *</label>
                 <input
                   type="text"
-                  placeholder="Ex: Clube Vip Barba Livre"
+                  required
+                  placeholder="Ex: Clube VIP Cabelo & Barba"
                   value={newPlanName}
                   onChange={(e) => setNewPlanName(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] focus:outline-none focus:border-[#7c3aed]"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#131b2e] mb-1">Valor (R$)</label>
+                  <label className="block font-bold text-[#131b2e] mb-1">Valor (R$) *</label>
                   <input
                     type="number"
-                    step="0.10"
+                    step="0.01"
+                    required
                     placeholder="149.90"
                     value={newPlanPrice}
                     onChange={(e) => setNewPlanPrice(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                    className="w-full px-3 py-2 rounded-xl border border-[#eaedff] font-bold focus:outline-none focus:border-[#7c3aed]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#131b2e] mb-1">Ciclo</label>
+                  <label className="block font-bold text-[#131b2e] mb-1">Periodicidade</label>
                   <select
                     value={newPlanInterval}
                     onChange={(e) => setNewPlanInterval(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                    className="w-full px-3 py-2 rounded-xl border border-[#eaedff] focus:outline-none focus:border-[#7c3aed]"
                   >
                     <option value="mensal">Mensal</option>
                     <option value="trimestral">Trimestral</option>
@@ -632,36 +624,34 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Limite de Sessões/mês</label>
+                <label className="block font-bold text-[#131b2e] mb-1">Sessões Inclusas por Mês</label>
                 <input
                   type="number"
-                  placeholder="Ex: 4 (ou 999 para ilimitado)"
                   value={newPlanSessions}
                   onChange={(e) => setNewPlanSessions(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] focus:outline-none focus:border-[#7c3aed]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Serviços Inclusos (separados por vírgula)</label>
+                <label className="block font-bold text-[#131b2e] mb-1">Serviços Inclusos (separados por vírgula)</label>
                 <input
                   type="text"
-                  placeholder="Ex: Corte Degradê, Barboterapia, Lavagem"
+                  placeholder="Ex: Corte Masculino, Barboterapia"
                   value={newPlanServices}
                   onChange={(e) => setNewPlanServices(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] focus:outline-none focus:border-[#7c3aed]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Descrição</label>
+                <label className="block font-bold text-[#131b2e] mb-1">Descrição</label>
                 <textarea
                   rows={2}
-                  placeholder="Benefícios e condições do plano..."
+                  placeholder="Ex: Cortes e barbas com lavagem e cortesia..."
                   value={newPlanDesc}
                   onChange={(e) => setNewPlanDesc(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] focus:outline-none focus:border-[#7c3aed]"
                 />
               </div>
 
@@ -669,15 +659,15 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsNewPlanModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-[#eaedff] text-xs font-semibold text-[#7b7487] hover:bg-[#f8f9fa]"
+                  className="px-4 py-2 rounded-xl border border-[#eaedff] font-semibold text-[#7b7487] hover:bg-[#f8f9fa]"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#7c3aed] text-white text-xs font-bold hover:bg-[#6b2fd8] transition-colors"
+                  className="px-5 py-2 rounded-xl bg-[#7c3aed] text-white font-bold hover:bg-[#6b2fd8] transition-colors shadow-sm"
                 >
-                  Salvar Plano
+                  Criar Plano
                 </button>
               </div>
             </form>
@@ -685,72 +675,89 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
         </div>
       )}
 
-      {/* MODAL NOVO ASSINANTE */}
+      {/* MODAL INSCREVER ASSINANTE */}
       {isNewSubscriberModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-[#eaedff] overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-[#eaedff] flex items-center justify-between bg-[#f8f9fa]">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[#7c3aed]">person_add</span>
-                <h3 className="font-bold text-base text-[#131b2e]">Inscrever Novo Assinante</h3>
+                <h3 className="font-bold text-base text-[#131b2e]">Inscrever Assinante</h3>
               </div>
               <button
                 onClick={() => setIsNewSubscriberModalOpen(false)}
                 className="text-[#7b7487] hover:text-[#131b2e] p-1"
+                type="button"
               >
                 <span className="material-symbols-outlined text-[1.25rem]">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleCreateSubscriber} className="p-5 space-y-4">
+            <form onSubmit={handleCreateSubscriber} className="p-5 space-y-4 text-xs">
+              {clients.length > 0 && (
+                <div>
+                  <label className="block font-bold text-[#131b2e] mb-1">Selecionar Cliente Cadastrado</label>
+                  <select
+                    value={selectedClientId}
+                    onChange={(e) => handleSelectClient(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#eaedff] font-semibold focus:outline-none focus:border-[#7c3aed]"
+                  >
+                    <option value="">-- Escolha um cliente do banco --</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.phone || 'Sem tel'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Nome do Cliente</label>
+                <label className="block font-bold text-[#131b2e] mb-1">Nome do Cliente *</label>
                 <input
                   type="text"
-                  placeholder="Ex: Beatriz Fagundes"
+                  required
                   value={newSubClientName}
                   onChange={(e) => setNewSubClientName(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] focus:outline-none focus:border-[#7c3aed]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">WhatsApp</label>
+                <label className="block font-bold text-[#131b2e] mb-1">WhatsApp do Cliente *</label>
                 <input
-                  type="text"
-                  placeholder="+55 11 99999-9999"
+                  type="tel"
+                  required
                   value={newSubClientPhone}
                   onChange={(e) => setNewSubClientPhone(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] focus:outline-none focus:border-[#7c3aed]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Plano Escolhido</label>
+                <label className="block font-bold text-[#131b2e] mb-1">Plano Desejado</label>
                 <select
                   value={newSubPlanId}
                   onChange={(e) => setNewSubPlanId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs font-semibold focus:outline-none focus:border-[#7c3aed]"
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] font-bold focus:outline-none focus:border-[#7c3aed]"
                 >
                   {plans.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} — R$ {p.price.toFixed(2)}/{p.interval}
+                      {p.name} - R$ {p.price.toFixed(2)} ({p.interval})
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Forma de Pagamento</label>
+                <label className="block font-bold text-[#131b2e] mb-1">Forma de Pagamento Recorrente</label>
                 <select
                   value={newSubPaymentMethod}
                   onChange={(e) => setNewSubPaymentMethod(e.target.value as any)}
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] focus:outline-none focus:border-[#7c3aed]"
                 >
-                  <option value="Cartão de Crédito Recorrente">Cartão de Crédito (Cobrança Automática)</option>
-                  <option value="PIX Recorrente">PIX Recorrente (Cobrança com Chave Pix)</option>
+                  <option value="PIX Recorrente">PIX Recorrente Instantâneo</option>
+                  <option value="Cartão de Crédito Recorrente">Cartão de Crédito Recorrente</option>
                 </select>
               </div>
 
@@ -758,13 +765,13 @@ export const ClubeAssinaturaView: React.FC<ClubeAssinaturaViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsNewSubscriberModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-[#eaedff] text-xs font-semibold text-[#7b7487] hover:bg-[#f8f9fa]"
+                  className="px-4 py-2 rounded-xl border border-[#eaedff] font-semibold text-[#7b7487] hover:bg-[#f8f9fa]"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#7c3aed] text-white text-xs font-bold hover:bg-[#6b2fd8] transition-colors"
+                  className="px-5 py-2 rounded-xl bg-[#7c3aed] text-white font-bold hover:bg-[#6b2fd8] transition-colors shadow-sm"
                 >
                   Ativar Assinatura
                 </button>
