@@ -1,20 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { ServiceItem } from '../types';
 
 interface NewClientModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddClient: (client: { name: string; phone: string; email: string; favoriteService: string }) => void;
+  services?: ServiceItem[];
 }
 
 export const NewClientModal: React.FC<NewClientModalProps> = ({
   isOpen,
   onClose,
   onAddClient,
+  services = [],
 }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('+55 11 ');
   const [email, setEmail] = useState('');
-  const [service, setService] = useState('Harmonização Facial');
+  const [service, setService] = useState('');
+
+  useEffect(() => {
+    if (services.length > 0 && !service) {
+      setService(services[0].name);
+    }
+  }, [services, service]);
 
   if (!isOpen) return null;
 
@@ -26,7 +35,7 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
       name: name.trim(),
       phone: phone.trim(),
       email: email.trim() || `${name.toLowerCase().replace(/\s+/g, '.')}@email.com`,
-      favoriteService: service,
+      favoriteService: service || (services[0]?.name ?? 'Procedimento Geral'),
     });
     onClose();
   };
@@ -47,7 +56,7 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
             </div>
             <div>
               <h2 className="font-bold text-base text-[#131b2e]">Novo Cliente</h2>
-              <p className="text-xs text-[#4a4455]">Cadastre um novo paciente no sistema</p>
+              <p className="text-xs text-[#4a4455]">Cadastre um novo cliente no sistema</p>
             </div>
           </div>
           <button
@@ -68,7 +77,7 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ex: Juliana Bittencourt"
+              placeholder="Ex: Carlos Silva"
               className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed]"
             />
           </div>
@@ -104,18 +113,27 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
             <label className="text-xs font-semibold text-[#131b2e] block mb-1">
               Procedimento de Interesse
             </label>
-            <select
-              value={service}
-              onChange={(e) => setService(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed] bg-white"
-            >
-              <option value="Harmonização Facial">Harmonização Facial</option>
-              <option value="Bioestimulador de Colágeno">Bioestimulador de Colágeno</option>
-              <option value="Peeling Químico">Peeling Químico</option>
-              <option value="Limpeza de pele profunda">Limpeza de pele profunda</option>
-              <option value="Consulta dermatológica">Consulta dermatológica</option>
-              <option value="Drenagem Linfática Facial">Drenagem Linfática Facial</option>
-            </select>
+            {services.length === 0 ? (
+              <input
+                type="text"
+                value={service}
+                onChange={(e) => setService(e.target.value)}
+                placeholder="Ex: Corte / Limpeza"
+                className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed]"
+              />
+            ) : (
+              <select
+                value={service}
+                onChange={(e) => setService(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed] bg-white"
+              >
+                {services.map((s) => (
+                  <option key={s.id} value={s.name}>
+                    {s.name} (R$ {s.price})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#eaedff]">

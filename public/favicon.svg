@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="brand-grad" x1="15%" y1="90%" x2="85%" y2="10%">
+      <stop offset="0%" stop-color="#4C1D95" />
+      <stop offset="45%" stop-color="#7C3AED" />
+      <stop offset="85%" stop-color="#A78BFA" />
+      <stop offset="100%" stop-color="#C4B5FD" />
+    </linearGradient>
+    <linearGradient id="brand-shadow" x1="30%" y1="30%" x2="70%" y2="80%">
+      <stop offset="0%" stop-color="#3B0764" />
+      <stop offset="60%" stop-color="#6D28D9" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="22" fill="#131B2E" />
+  <!-- Ribbon Loop Base Underlay -->
+  <path
+    d="M28 80 C26 70 38 42 48 24 C52 16 62 16 66 24 C72 36 82 58 84 66 C86 74 78 80 70 78 C60 76 48 60 42 48 C36 36 30 42 32 54 C34 66 46 80 62 80 C72 80 80 72 84 64"
+    stroke="url(#brand-grad)"
+    stroke-width="11"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- Front 3D Ribbon Overlap for Volume -->
+  <path
+    d="M48 24 C52 16 62 16 66 24 C71 34 78 52 82 64 C84 70 80 76 74 76 C65 76 52 60 44 48"
+    stroke="url(#brand-shadow)"
+    stroke-width="9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.9"
+  />
+  <!-- Top Right Sparkle Star -->
+  <path
+    d="M84 12 C84 19 88.5 23 95 23 C88.5 23 84 27 84 34 C84 27 79.5 23 73 23 C79.5 23 84 19 84 12 Z"
+    fill="#C4B5FD"
+  />
+</svg>

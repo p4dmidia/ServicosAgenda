@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { ScreenType } from '../types';
+import { ScreenType, Tenant } from '../types';
 import { APP_IMAGES } from '../data/mockData';
 import { useTenant } from '../context/TenantContext';
 import { useAuth } from '../context/AuthContext';
 import { BrandLogo } from './common/BrandLogo';
+import { mapDbTenantToAppTenant } from '../services/tenantService';
 
 interface SidebarProps {
   currentScreen: ScreenType;
+  appointmentsCount?: number;
   onSelectScreen?: (screen: ScreenType) => void;
   onNavigate?: (screen: ScreenType) => void;
   isOpenMobile?: boolean;
@@ -23,28 +25,9 @@ interface NavItem {
   hasDot?: boolean;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { id: 'visao-geral', label: 'Visão Geral', icon: 'grid_view' },
-  { id: 'agenda', label: 'Agenda', icon: 'calendar_today', badge: 12 },
-  { id: 'agendamento-online', label: 'Agendamento Online', icon: 'public', badge: 'Link' },
-  { id: 'clientes', label: 'Clientes', icon: 'groups' },
-  { id: 'profissionais', label: 'Profissionais', icon: 'badge' },
-  { id: 'servicos', label: 'Serviços', icon: 'spa' },
-  { id: 'whatsapp', label: 'WhatsApp Pro', icon: 'chat', hasDot: true },
-  { id: 'agente-ia', label: 'Agente IA WhatsApp', icon: 'smart_toy', badge: 'IA' },
-  { id: 'financeiro', label: 'Financeiro', icon: 'account_balance' },
-  { id: 'pagamentos', label: 'Gateway Pix', icon: 'payments' },
-  { id: 'marketing', label: 'Marketing', icon: 'campaign' },
-  { id: 'fidelidade', label: 'Fidelidade & Cashback', icon: 'loyalty' },
-  { id: 'clube-de-assinatura', label: 'Clube Assinatura', icon: 'card_membership' },
-  { id: 'estoque', label: 'Estoque & Insumos', icon: 'inventory_2' },
-  { id: 'afiliados', label: 'Parceiros & Afiliados', icon: 'share' },
-  { id: 'relatorios', label: 'Relatórios', icon: 'bar_chart' },
-  { id: 'super-admin', label: 'Super Admin (SaaS)', icon: 'admin_panel_settings' },
-];
-
 export const Sidebar: React.FC<SidebarProps> = ({
   currentScreen,
+  appointmentsCount,
   onSelectScreen,
   onNavigate,
   isOpenMobile,
@@ -52,8 +35,50 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
 }) => {
   const { tenants, activeTenant, switchTenant, isImpersonating, returnToSuperAdmin } = useTenant();
-  const { tenantMemberships, activeMembership, setActiveTenantId } = useAuth();
+  const { isSuperAdmin, tenantMemberships, activeMembership, setActiveTenantId } = useAuth();
   const [isTenantDropdownOpen, setIsTenantDropdownOpen] = useState(false);
+
+  // Filter available tenants: Super admin sees all tenants; regular users see only their memberships
+  const userMembershipsTenants: Tenant[] = tenantMemberships
+    .map((m) => (m.tenants ? mapDbTenantToAppTenant(m.tenants) : null))
+    .filter((t): t is Tenant => Boolean(t));
+
+  const availableTenants: Tenant[] = isSuperAdmin
+    ? tenants
+    : userMembershipsTenants.length > 0
+    ? userMembershipsTenants
+    : [activeTenant];
+
+  const canSwitchTenants = isSuperAdmin || availableTenants.length > 1;
+
+  const NAV_ITEMS: NavItem[] = [
+    { id: 'visao-geral', label: 'Visão Geral', icon: 'grid_view' },
+    { 
+      id: 'agenda', 
+      label: 'Agenda', 
+      icon: 'calendar_today', 
+      badge: appointmentsCount !== undefined ? (appointmentsCount > 0 ? appointmentsCount : undefined) : undefined 
+    },
+    { id: 'agendamento-online', label: 'Agendamento Online', icon: 'public', badge: 'Link' },
+    { id: 'clientes', label: 'Clientes', icon: 'groups' },
+    { id: 'profissionais', label: 'Profissionais', icon: 'badge' },
+    { id: 'servicos', label: 'Serviços', icon: 'spa' },
+    { id: 'whatsapp', label: 'WhatsApp Pro', icon: 'chat', hasDot: true },
+    { id: 'agente-ia', label: 'Agente IA WhatsApp', icon: 'smart_toy', badge: 'IA' },
+    { id: 'financeiro', label: 'Financeiro', icon: 'account_balance' },
+    { id: 'pagamentos', label: 'Gateway Pix', icon: 'payments' },
+    { id: 'marketing', label: 'Marketing', icon: 'campaign' },
+    { id: 'fidelidade', label: 'Fidelidade & Cashback', icon: 'loyalty' },
+    { id: 'clube-de-assinatura', label: 'Clube Assinatura', icon: 'card_membership' },
+    { id: 'estoque', label: 'Estoque & Insumos', icon: 'inventory_2' },
+    { id: 'afiliados', label: 'Parceiros & Afiliados', icon: 'share' },
+    { id: 'relatorios', label: 'Relatórios', icon: 'bar_chart' },
+  ];
+
+  // Only super admins see the Super Admin SaaS portal in the sidebar
+  if (isSuperAdmin) {
+    NAV_ITEMS.push({ id: 'super-admin', label: 'Super Admin (SaaS)', icon: 'admin_panel_settings' });
+  }
 
   const isMobile = isOpenMobile ?? isMobileOpen ?? false;
   const handleSelectScreen = (screen: ScreenType) => {
@@ -111,13 +136,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="px-3 py-3 relative">
             <div
               id="clinic-unit-selector"
-              onClick={() => setIsTenantDropdownOpen(!isTenantDropdownOpen)}
-              className="flex items-center justify-between p-2 rounded-lg bg-white/10 text-[#eef0ff] cursor-pointer hover:bg-white/15 transition-colors group border border-white/5"
+              onClick={() => {
+                if (canSwitchTenants) {
+                  setIsTenantDropdownOpen(!isTenantDropdownOpen);
+                }
+              }}
+              className={`flex items-center justify-between p-2 rounded-lg bg-white/10 text-[#eef0ff] ${
+                canSwitchTenants ? 'cursor-pointer hover:bg-white/15' : 'cursor-default'
+              } transition-colors group border border-white/5`}
             >
               <div className="flex items-center gap-2 overflow-hidden">
                 <div
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-base flex-shrink-0 shadow-sm"
-                  style={{ backgroundColor: activeTenant.settings.primaryColor || '#7c3aed' }}
+                  style={{ backgroundColor: activeTenant.settings?.primaryColor || '#7c3aed' }}
                 >
                   <span className="material-symbols-outlined text-[1.125rem]">
                     {activeTenant.type === 'barbearia'
@@ -136,13 +167,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                 </div>
               </div>
-              <span className="material-symbols-outlined text-[#ccc3d8] text-[1.25rem] group-hover:text-white transition-colors">
-                unfold_more
-              </span>
+              {canSwitchTenants && (
+                <span className="material-symbols-outlined text-[#ccc3d8] text-[1.25rem] group-hover:text-white transition-colors">
+                  unfold_more
+                </span>
+              )}
             </div>
 
             {/* Dropdown Menu */}
-            {isTenantDropdownOpen && (
+            {isTenantDropdownOpen && canSwitchTenants && (
               <div
                 className="absolute left-3 right-3 top-14 mt-1 bg-[#1e2333] border border-white/10 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-100"
               >
@@ -150,14 +183,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   Alternar Empresa
                 </span>
 
-                {tenants.map((t) => (
+                {availableTenants.map((t) => (
                   <button
                     key={t.id}
                     onClick={() => {
-                      switchTenant(t.id);
+                      if (isSuperAdmin) {
+                        switchTenant(t.id);
+                      } else {
+                        setActiveTenantId(t.id);
+                        switchTenant(t.id);
+                      }
                       setIsTenantDropdownOpen(false);
                     }}
-                    className={`flex items-center justify-between p-2 rounded-lg text-left transition-colors ${
+                    className={`flex items-center justify-between p-2 rounded-lg text-left transition-colors cursor-pointer ${
                       t.id === activeTenant.id
                         ? 'bg-[#7c3aed] text-white font-semibold'
                         : 'text-[#eef0ff] hover:bg-white/10'
@@ -173,18 +211,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 ))}
 
-                <div className="my-1 border-t border-white/10"></div>
-
-                <button
-                  onClick={() => {
-                    handleSelectScreen('super-admin');
-                    setIsTenantDropdownOpen(false);
-                  }}
-                  className="flex items-center gap-2 p-2 rounded-lg text-amber-300 hover:bg-white/10 text-xs font-semibold"
-                >
-                  <span className="material-symbols-outlined text-[1.125rem]">admin_panel_settings</span>
-                  👑 Painel Super Admin
-                </button>
+                {isSuperAdmin && (
+                  <>
+                    <div className="my-1 border-t border-white/10"></div>
+                    <button
+                      onClick={() => {
+                        handleSelectScreen('super-admin');
+                        setIsTenantDropdownOpen(false);
+                      }}
+                      className="flex items-center gap-2 p-2 rounded-lg text-amber-300 hover:bg-white/10 text-xs font-semibold cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[1.125rem]">admin_panel_settings</span>
+                      👑 Painel Super Admin
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>

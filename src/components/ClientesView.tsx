@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { Client } from '../types';
-import { CLIENTS_LIST } from '../data/mockData';
+import React, { useState, useMemo } from 'react';
+import { Client, Appointment } from '../types';
 import { useTenant } from '../context/TenantContext';
 
 interface ClientesViewProps {
@@ -10,6 +9,7 @@ interface ClientesViewProps {
   onOpenWhatsAppChat: (phone?: string, name?: string) => void;
   onOpenNewAppointment?: () => void;
   clients?: Client[];
+  appointments?: Appointment[];
 }
 
 interface ClientTimelineEvent {
@@ -29,6 +29,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
   onOpenWhatsAppChat,
   onOpenNewAppointment,
   clients = [],
+  appointments = [],
 }) => {
   const { activeTenant } = useTenant();
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,73 +37,30 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
   // Notes state inside medical/aesthetic chart
-  const [clientNotes, setClientNotes] = useState<Record<string, string[]>>({
-    'client-1': [
-      'Pele mista com tendência a oleosidade na zona T. Reage bem ao ácido salicílico.',
-      'Preferência por atendimento no turno da manhã com a Dra. Fernanda.',
-    ],
-    'client-2': [
-      'Barba fechada com pele sensível no pescoço. Evitar navalha pura, usar máquina shaver.',
-      'Consome café expresso e produtos de finalização para barba.',
-    ],
-  });
-
+  const [clientNotes, setClientNotes] = useState<Record<string, string[]>>({});
   const [newNoteInput, setNewNoteInput] = useState('');
 
-  // Mock timeline events for each client
-  const clientTimelines: Record<string, ClientTimelineEvent[]> = {
-    'client-1': [
-      {
-        id: 'ev-1',
-        date: '24/10/2026 às 09:00',
-        service: 'Limpeza de pele profunda',
-        professional: 'Dra. Fernanda',
-        price: 240,
-        status: 'CONCLUIDO',
-        notes: 'Extração completa realizada sem intercorrências. Recomendado filtro solar FPS 50.',
-      },
-      {
-        id: 'ev-2',
-        date: '10/09/2026 às 14:30',
-        service: 'Peeling de Diamante',
-        professional: 'Dra. Camila',
-        price: 320,
-        status: 'CONCLUIDO',
-        notes: 'Sessão 1 do protocolo de renovação celular.',
-      },
-      {
-        id: 'ev-3',
-        date: '15/08/2026 às 10:00',
-        service: 'Consulta de Avaliação',
-        professional: 'Dra. Fernanda',
-        price: 150,
-        status: 'CONCLUIDO',
-        notes: 'Início do plano de tratamento estético.',
-      },
-    ],
-    'client-2': [
-      {
-        id: 'ev-4',
-        date: '24/10/2026 às 10:00',
-        service: 'Consulta dermatológica',
-        professional: 'Dr. Rafael',
-        price: 350,
-        status: 'CONFIRMADO',
-        notes: 'Acompanhamento de dermatite de contato.',
-      },
-      {
-        id: 'ev-5',
-        date: '12/07/2026 às 16:00',
-        service: 'Biópsia e Cauterização',
-        professional: 'Dr. Rafael',
-        price: 520,
-        status: 'CONCLUIDO',
-        notes: 'Procedimento cirúrgico leve.',
-      },
-    ],
-  };
+  // Dynamic timeline events from real appointments
+  const selectedClientTimeline = useMemo(() => {
+    if (!selectedClient) return [];
+    const clientApts = appointments.filter((a) =>
+      (a.clientName && selectedClient.name && a.clientName.toLowerCase().includes(selectedClient.name.toLowerCase())) ||
+      (selectedClient.name && a.clientName && selectedClient.name.toLowerCase().includes(a.clientName.toLowerCase())) ||
+      (selectedClient.phone && a.clientPhone && a.clientPhone.replace(/\D/g, '').includes(selectedClient.phone.replace(/\D/g, '')))
+    );
 
-  const clientList = clients || CLIENTS_LIST;
+    return clientApts.map((a) => ({
+      id: a.id,
+      date: `${a.date || 'Hoje'} às ${a.time}`,
+      service: a.service,
+      professional: a.professional,
+      price: a.price,
+      status: (a.status === 'CONCLUIDO' ? 'CONCLUIDO' : a.status === 'CANCELADO' ? 'CANCELADO' : 'CONFIRMADO') as any,
+      notes: `Procedimento realizado com ${a.professional}.`,
+    }));
+  }, [selectedClient, appointments]);
+
+  const clientList = clients;
   const filteredClients = clientList.filter((client) => {
     const matchesSearch =
       client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -127,6 +85,20 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
     setNewNoteInput('');
     onTriggerToast('Nova anotação registrada no prontuário!');
   };
+
+  const totalClients = clients.length;
+  const activeClientsCount = clients.filter(
+    (c) => c.status === 'Ativo' || (c.appointmentsCount && c.appointmentsCount > 0)
+  ).length;
+  const newThisMonth = clients.filter(
+    (c) => c.status === 'Novo' || (c.lastVisit && c.lastVisit.toLowerCase().includes('hoje'))
+  ).length;
+  const retentionRate = totalClients > 0
+    ? Math.round(((clients.filter((c) => (c.appointmentsCount || 0) >= 2 || c.status === 'Ativo').length) / totalClients) * 100)
+    : 100;
+  const inactiveCount = clients.filter(
+    (c) => c.status?.toLowerCase().includes('sem retorno') || c.status?.toLowerCase().includes('inativo')
+  ).length;
 
   return (
     <div className="flex flex-col w-full gap-6 pb-12">
@@ -165,23 +137,31 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 rounded-xl bg-white border border-[#eaedff] shadow-sm">
           <span className="text-xs text-[#4a4455] font-medium">Clientes Ativos</span>
-          <p className="text-2xl font-bold text-[#131b2e] mt-1">1.284</p>
-          <span className="text-xs text-emerald-700 font-semibold mt-1 block">Frequência regular</span>
+          <p className="text-2xl font-bold text-[#131b2e] mt-1">{activeClientsCount}</p>
+          <span className="text-xs text-emerald-700 font-semibold mt-1 block">
+            {totalClients > 0 ? `${totalClients} cliente(s) no total` : 'Frequência regular'}
+          </span>
         </div>
         <div className="p-4 rounded-xl bg-white border border-[#eaedff] shadow-sm">
           <span className="text-xs text-[#4a4455] font-medium">Novos este mês</span>
-          <p className="text-2xl font-bold text-[#630ed4] mt-1">+86</p>
-          <span className="text-xs text-[#4a4455] mt-1 block">+14% vs mês anterior</span>
+          <p className="text-2xl font-bold text-[#630ed4] mt-1">{newThisMonth > 0 ? `+${newThisMonth}` : '0'}</p>
+          <span className="text-xs text-[#4a4455] mt-1 block">
+            {newThisMonth > 0 ? 'Novos cadastros' : 'Nenhum novo no mês'}
+          </span>
         </div>
         <div className="p-4 rounded-xl bg-white border border-[#eaedff] shadow-sm">
           <span className="text-xs text-[#4a4455] font-medium">Taxa de Retenção</span>
-          <p className="text-2xl font-bold text-emerald-600 mt-1">72%</p>
-          <span className="text-xs text-[#4a4455] mt-1 block">Alto engajamento</span>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">{retentionRate}%</p>
+          <span className="text-xs text-[#4a4455] mt-1 block">
+            {totalClients > 0 ? 'Fidelidade da base' : 'Aguardando atendimentos'}
+          </span>
         </div>
         <div className="p-4 rounded-xl bg-white border border-[#eaedff] shadow-sm">
           <span className="text-xs text-[#4a4455] font-medium">Sem Retorno (+30d)</span>
-          <p className="text-2xl font-bold text-amber-600 mt-1">143</p>
-          <span className="text-xs text-amber-800 font-semibold mt-1 block">Alvo para WhatsApp</span>
+          <p className="text-2xl font-bold text-amber-600 mt-1">{inactiveCount}</p>
+          <span className="text-xs text-amber-800 font-semibold mt-1 block">
+            {inactiveCount > 0 ? 'Alvo para WhatsApp' : 'Nenhum inativo'}
+          </span>
         </div>
       </div>
 
@@ -606,50 +586,57 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
                 </div>
               </div>
 
-              {/* Anotações Clínicas / Estéticas do Prontuário */}
+              {/* Histórico Clínico & Anotações de Procedimentos */}
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-sm text-[#131b2e] flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[1.125rem] text-[#630ed4]">description</span>
-                    Anotações Clínicas & Histórico
+                    <span className="material-symbols-outlined text-[1.125rem] text-[#630ed4]">clinical_notes</span>
+                    Anotações Técnicas & Procedimentos
                   </h3>
-                  <span className="text-[0.6875rem] text-[#7b7487]">Visível apenas pela equipe</span>
+                  <span className="text-[0.6875rem] text-[#7b7487]">Visível apenas para a equipe</span>
                 </div>
 
-                {/* Input de Nova Nota */}
+                {/* Input para nova anotação */}
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={newNoteInput}
                     onChange={(e) => setNewNoteInput(e.target.value)}
-                    placeholder="Adicionar nota sobre pele, alergia ou preferência..."
-                    className="flex-1 h-9 px-3 rounded-lg bg-[#f2f3ff] border border-[#eaedff] text-xs text-[#131b2e] outline-none"
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddNote(selectedClient.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAddNote(selectedClient.id);
+                    }}
+                    placeholder="Adicionar observação técnica sobre o atendimento..."
+                    className="flex-1 h-9 px-3 rounded-lg bg-[#f2f3ff] border border-[#eaedff] text-xs text-[#131b2e] placeholder-[#7b7487] focus:outline-none focus:border-[#7c3aed]"
                   />
                   <button
                     onClick={() => handleAddNote(selectedClient.id)}
-                    className="px-3 rounded-lg bg-[#7c3aed] text-white text-xs font-semibold hover:bg-[#630ed4]"
+                    className="px-3 rounded-lg bg-[#7c3aed] hover:bg-[#630ed4] text-white text-xs font-semibold"
                     type="button"
                   >
                     Salvar
                   </button>
                 </div>
 
-                {/* Lista de Notas */}
-                <div className="flex flex-col gap-2">
-                  {(clientNotes[selectedClient.id] || [
-                    'Paciente não possui alergias conhecidas. Pontual e assíduo.',
-                  ]).map((note, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-950 flex items-start gap-2"
-                    >
-                      <span className="material-symbols-outlined text-[1rem] text-amber-700 shrink-0 mt-0.5">
-                        sticky_note_2
-                      </span>
-                      <span>{note}</span>
-                    </div>
-                  ))}
+                {/* Lista de anotações registradas */}
+                <div className="flex flex-col gap-1.5 mt-1">
+                  {((clientNotes[selectedClient.id] || []).length === 0 && !selectedClient.favoriteService) ? (
+                    <p className="text-xs text-[#7b7487] italic">Nenhuma anotação registrada ainda.</p>
+                  ) : (
+                    <>
+                      {selectedClient.favoriteService && (
+                        <div className="p-2.5 rounded-lg bg-[#f2f3ff] border border-[#eaedff] text-xs flex items-start gap-2">
+                          <span className="material-symbols-outlined text-[#630ed4] text-[1rem] shrink-0 mt-0.5">bookmark</span>
+                          <span className="text-[#131b2e]">Procedimento de interesse / preferência: <strong>{selectedClient.favoriteService}</strong></span>
+                        </div>
+                      )}
+                      {(clientNotes[selectedClient.id] || []).map((note, idx) => (
+                        <div key={idx} className="p-2.5 rounded-lg bg-[#f2f3ff] border border-[#eaedff] text-xs flex items-start gap-2">
+                          <span className="material-symbols-outlined text-[#630ed4] text-[1rem] shrink-0 mt-0.5">chat_bubble</span>
+                          <span className="text-[#131b2e]">{note}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -661,35 +648,28 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
                 </h3>
 
                 <div className="relative pl-6 flex flex-col gap-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-[#eaedff]">
-                  {(clientTimelines[selectedClient.id] || [
-                    {
-                      id: 'ev-default',
-                      date: 'Hoje às 15:00',
-                      service: selectedClient.favoriteService,
-                      professional: 'Dra. Fernanda',
-                      price: 240,
-                      status: 'CONCLUIDO',
-                      notes: 'Atendimento concluído com sucesso.',
-                    },
-                  ]).map((ev) => (
-                    <div key={ev.id} className="relative flex flex-col gap-1 text-xs">
-                      <span className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-[#7c3aed] text-white flex items-center justify-center text-[0.625rem]">
-                        •
-                      </span>
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-[#131b2e]">{ev.service}</span>
-                        <span className="font-bold text-emerald-700">R$ {ev.price.toFixed(2)}</span>
-                      </div>
-                      <span className="text-[0.6875rem] text-[#7b7487]">
-                        {ev.date} com <strong>{ev.professional}</strong>
-                      </span>
-                      {ev.notes && (
-                        <p className="text-[0.6875rem] text-[#4a4455] bg-[#f8f9fa] p-2 rounded-lg border border-[#eaedff] mt-1">
+                  {selectedClientTimeline.length === 0 ? (
+                    <p className="text-xs text-[#7b7487] italic py-2">Nenhum atendimento anterior registrado para este cliente.</p>
+                  ) : (
+                    selectedClientTimeline.map((ev) => (
+                      <div key={ev.id} className="relative flex flex-col gap-1 text-xs">
+                        <span className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-[#7c3aed] text-white flex items-center justify-center text-[0.625rem]">
+                          •
+                        </span>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[#131b2e]">{ev.service}</span>
+                          <span className="font-bold text-emerald-700">R$ {ev.price.toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[0.6875rem] text-[#7b7487]">
+                          <span>{ev.professional}</span>
+                          <span>{ev.date}</span>
+                        </div>
+                        <p className="text-[0.6875rem] text-[#4a4455] bg-[#f2f3ff] p-2 rounded-md mt-0.5 border border-[#eaedff]">
                           {ev.notes}
                         </p>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>

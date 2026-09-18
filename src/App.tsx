@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { ScreenType, Appointment, AppointmentStatus, Client } from './types';
-import { INITIAL_TODAY_SCHEDULE, UPCOMING_APPOINTMENTS_TABLE, CLIENTS_LIST } from './data/mockData';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ScreenType, Appointment, AppointmentStatus, Client, ServiceItem, Professional } from './types';
+import { supabase } from './lib/supabase';
 import { TenantProvider, useTenant } from './context/TenantContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthContainer } from './components/auth/AuthContainer';
@@ -14,6 +14,14 @@ import {
   fetchClientsFromSupabase,
   createClientInSupabase,
 } from './services/clientService';
+import {
+  fetchServicesFromSupabase,
+  createServiceInSupabase,
+  deleteServiceInSupabase,
+  fetchProfessionalsFromSupabase,
+  createProfessionalInSupabase,
+  deleteProfessionalInSupabase,
+} from './services/catalogService';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
@@ -59,39 +67,75 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [professionals, setProfessionals] = useState<Professional[]>([]);
 
   const { activeTenant } = useTenant();
+  const { isSuperAdmin } = useAuth();
 
-  // Load appointments and clients from Supabase when tenant changes
+  // Load appointments, clients, services and professionals from Supabase when tenant changes
+  const loadTenantData = useCallback(async () => {
+    if (!activeTenant?.id) return;
+
+    try {
+      const [remoteAppointments, remoteClients, remoteServices, remoteProfessionals] = await Promise.all([
+        fetchAppointmentsFromSupabase(activeTenant.id).catch(() => []),
+        fetchClientsFromSupabase(activeTenant.id).catch(() => []),
+        fetchServicesFromSupabase(activeTenant.id).catch(() => []),
+        fetchProfessionalsFromSupabase(activeTenant.id).catch(() => []),
+      ]);
+
+      setAppointments(remoteAppointments || []);
+      setClients(remoteClients || []);
+      setServices(remoteServices || []);
+      setProfessionals(remoteProfessionals || []);
+    } catch (err) {
+      console.warn('Erro ao carregar dados do tenant do Supabase:', err);
+    }
+  }, [activeTenant?.id]);
+
+  useEffect(() => {
+    loadTenantData();
+  }, [loadTenantData]);
+
+  // Realtime subscription on Supabase tables for active tenant
   useEffect(() => {
     if (!activeTenant?.id) return;
 
-    let isMounted = true;
-
-    async function loadTenantData() {
-      try {
-        const [remoteAppointments, remoteClients] = await Promise.all([
-          fetchAppointmentsFromSupabase(activeTenant.id).catch(() => []),
-          fetchClientsFromSupabase(activeTenant.id).catch(() => []),
-        ]);
-
-        if (isMounted) {
-          setAppointments(remoteAppointments || []);
-          setClients(remoteClients || []);
+    const channel = supabase
+      .channel(`tenant-live-data-${activeTenant.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments', filter: `tenant_id=eq.${activeTenant.id}` },
+        () => {
+          fetchAppointmentsFromSupabase(activeTenant.id).then(setAppointments).catch(() => {});
         }
-      } catch (err) {
-        console.warn('Erro ao carregar dados do tenant do Supabase:', err);
-        if (isMounted) {
-          setAppointments([]);
-          setClients([]);
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'clients', filter: `tenant_id=eq.${activeTenant.id}` },
+        () => {
+          fetchClientsFromSupabase(activeTenant.id).then(setClients).catch(() => {});
         }
-      }
-    }
-
-    loadTenantData();
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'services', filter: `tenant_id=eq.${activeTenant.id}` },
+        () => {
+          fetchServicesFromSupabase(activeTenant.id).then(setServices).catch(() => {});
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'professionals', filter: `tenant_id=eq.${activeTenant.id}` },
+        () => {
+          fetchProfessionalsFromSupabase(activeTenant.id).then(setProfessionals).catch(() => {});
+        }
+      )
+      .subscribe();
 
     return () => {
-      isMounted = false;
+      supabase.removeChannel(channel);
     };
   }, [activeTenant?.id]);
 
@@ -103,8 +147,8 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
 
   // WhatsApp active conversation target
   const [activeChat, setActiveChat] = useState<{ phone?: string; name?: string }>({
-    name: 'Mariana Silveira',
-    phone: '+55 11 98452-1100',
+    name: 'Cliente',
+    phone: '',
   });
 
   // Toast notifications
@@ -201,11 +245,34 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
     }
   };
 
+  const handleAddProfessional = async (prof: { name: string; role: string; phone?: string; email?: string; colorClass?: string; photo?: string }) => {
+    if (!activeTenant?.id) return;
+    const created = await createProfessionalInSupabase(activeTenant.id, prof);
+    setProfessionals((prev) => [...prev, created]);
+  };
+
+  const handleDeleteProfessional = async (id: string) => {
+    await deleteProfessionalInSupabase(id);
+    setProfessionals((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const handleAddService = async (service: Omit<ServiceItem, 'id' | 'tenantId'>) => {
+    if (!activeTenant?.id) return;
+    const created = await createServiceInSupabase(activeTenant.id, service);
+    setServices((prev) => [...prev, created]);
+  };
+
+  const handleDeleteService = async (id: string) => {
+    await deleteServiceInSupabase(id);
+    setServices((prev) => prev.filter((s) => s.id !== id));
+  };
+
   return (
     <div className="flex min-h-screen bg-[#f8f9fa] text-[#131b2e] font-sans antialiased overflow-x-hidden">
       {/* Sidebar Navigation */}
       <Sidebar
         currentScreen={currentScreen}
+        appointmentsCount={appointments.length}
         onNavigate={(s) => {
           handleScreenChange(s);
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -242,6 +309,9 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
               appointments={appointments}
               todaySchedule={appointments}
               upcomingAppointments={appointments}
+              clients={clients}
+              professionals={professionals}
+              services={services}
               onNavigate={(s) => handleScreenChange(s)}
               onOpenNewAppointment={() => setIsNewAppointmentOpen(true)}
               onOpenNewClient={() => setIsNewClientOpen(true)}
@@ -254,6 +324,7 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
           {currentScreen === 'agenda' && (
             <AgendaView
               appointments={appointments}
+              professionals={professionals}
               onOpenNewAppointment={() => setIsNewAppointmentOpen(true)}
               onTriggerToast={showToast}
               onOpenWhatsAppChat={handleOpenWhatsAppChat}
@@ -265,6 +336,10 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
 
           {currentScreen === 'agendamento-online' && (
             <PublicBookingView
+              appointments={appointments}
+              services={services}
+              professionals={professionals}
+              clients={clients}
               onAddAppointment={handleAddAppointment}
               onNavigate={(s) => handleScreenChange(s)}
               onTriggerToast={showToast}
@@ -274,6 +349,7 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
           {currentScreen === 'clientes' && (
             <ClientesView
               clients={clients}
+              appointments={appointments}
               onOpenNewClient={() => setIsNewClientOpen(true)}
               onOpenNewAppointment={() => setIsNewAppointmentOpen(true)}
               onOpenCampaign={() => setIsCampaignOpen(true)}
@@ -284,6 +360,9 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
 
           {currentScreen === 'profissionais' && (
             <ProfissionaisView
+              professionals={professionals}
+              onAddProfessional={handleAddProfessional}
+              onDeleteProfessional={handleDeleteProfessional}
               onTriggerToast={showToast}
               onOpenNewAppointment={() => setIsNewAppointmentOpen(true)}
             />
@@ -291,6 +370,9 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
 
           {currentScreen === 'servicos' && (
             <ServicosView
+              services={services}
+              onAddService={handleAddService}
+              onDeleteService={handleDeleteService}
               onOpenNewAppointment={() => setIsNewAppointmentOpen(true)}
               onTriggerToast={showToast}
             />
@@ -312,11 +394,18 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
           )}
 
           {currentScreen === 'financeiro' && (
-            <FinanceiroView onTriggerToast={showToast} />
+            <FinanceiroView
+              appointments={appointments}
+              services={services}
+              professionals={professionals}
+              onTriggerToast={showToast}
+            />
           )}
 
           {currentScreen === 'pagamentos' && (
             <PagamentosView
+              appointments={appointments}
+              clients={clients}
               onTriggerToast={showToast}
               onOpenWhatsAppChat={handleOpenWhatsAppChat}
             />
@@ -324,6 +413,9 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
 
           {currentScreen === 'marketing' && (
             <MarketingView
+              clients={clients}
+              appointments={appointments}
+              services={services}
               onTriggerToast={showToast}
               onOpenWhatsAppChat={handleOpenWhatsAppChat}
             />
@@ -331,6 +423,8 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
 
           {currentScreen === 'fidelidade' && (
             <FidelidadeView
+              clients={clients}
+              appointments={appointments}
               onTriggerToast={showToast}
               onOpenWhatsAppChat={handleOpenWhatsAppChat}
             />
@@ -358,7 +452,7 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
             <RelatoriosView onTriggerToast={showToast} />
           )}
 
-          {currentScreen === 'super-admin' && (
+          {currentScreen === 'super-admin' && isSuperAdmin && (
             <SuperAdminView
               onNavigate={(s) => handleScreenChange(s)}
               onTriggerToast={showToast}
@@ -400,12 +494,15 @@ function MainLayout({ screen = 'visao-geral', onNavigate }: MainLayoutProps) {
         isOpen={isNewAppointmentOpen}
         onClose={() => setIsNewAppointmentOpen(false)}
         onAddAppointment={handleAddAppointment}
+        services={services}
+        professionals={professionals}
       />
 
       <NewClientModal
         isOpen={isNewClientOpen}
         onClose={() => setIsNewClientOpen(false)}
         onAddClient={handleAddClient}
+        services={services}
       />
 
       <QuickCampaignModal

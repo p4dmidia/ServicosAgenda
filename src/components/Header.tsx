@@ -297,20 +297,31 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             className="flex items-center gap-2 pl-1 cursor-pointer select-none group"
           >
-            <img
-              alt="Mariane Administradora"
-              className="w-8 h-8 rounded-full object-cover ring-2 ring-[#eaedff] group-hover:ring-[#7c3aed] transition-all"
-              src={APP_IMAGES.marianeProfile}
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
+            {user?.user_metadata?.avatar_url ? (
+              <img
+                alt={user?.user_metadata?.full_name || 'Perfil'}
+                className="w-8 h-8 rounded-full object-cover ring-2 ring-[#eaedff] group-hover:ring-[#7c3aed] transition-all"
+                src={user.user_metadata.avatar_url}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-[#7c3aed] text-white flex items-center justify-center font-bold text-xs shadow-xs ring-2 ring-[#eaedff] group-hover:ring-[#7c3aed] transition-all">
+                {(user?.user_metadata?.full_name || user?.email || 'U')
+                  .split(' ')
+                  .map((n: string) => n[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase()}
+              </div>
+            )}
             <div className="hidden xl:flex flex-col text-left">
-              <span className="text-xs font-semibold text-[#131b2e] leading-tight">
-                Mariane
+              <span className="text-xs font-semibold text-[#131b2e] leading-tight max-w-[120px] truncate">
+                {user?.user_metadata?.full_name?.split(' ')[0] || (user?.email ? user.email.split('@')[0] : 'Usuário')}
               </span>
               <span className="text-[0.6875rem] text-[#4a4455] leading-tight">
-                Administradora
+                {isSuperAdmin ? 'Super Admin' : activeMembership?.role === 'owner' ? 'Proprietário(a)' : 'Administrador(a)'}
               </span>
             </div>
             <span className="material-symbols-outlined text-[#ccc3d8] text-[1.125rem] group-hover:text-[#131b2e] transition-colors">
@@ -334,7 +345,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full font-medium text-[0.625rem] ${
                   isSuperAdmin ? 'bg-purple-100 text-[#630ed4]' : 'bg-slate-100 text-slate-700'
                 }`}>
-                  {isSuperAdmin ? 'Super Administradora' : 'Membro da Equipe'}
+                  {isSuperAdmin ? 'Super Administrador' : activeMembership?.role === 'owner' ? 'Proprietário da Empresa' : 'Membro da Equipe'}
                 </span>
               </div>
               <button

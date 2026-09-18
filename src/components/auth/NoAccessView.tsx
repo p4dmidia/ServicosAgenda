@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 export const NoAccessView: React.FC = () => {
   const { user, signOut, refreshUserProfile } = useAuth();
+  const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
       await refreshUserProfile();
+      navigate('/');
     } finally {
       setTimeout(() => setIsRefreshing(false), 500);
     }

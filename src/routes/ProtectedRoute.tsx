@@ -33,11 +33,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       return <Navigate to="/" replace />;
     }
 
-    if (allowedRole === 'tenant_member' && tenantMemberships.length === 0) {
+    const isClientAccount = user?.user_metadata?.account_type === 'cliente';
+    if (allowedRole === 'tenant_member' && tenantMemberships.length === 0 && isClientAccount) {
       return <Navigate to="/" replace />;
     }
 
-    if (allowedRole === 'client' && !clientProfile) {
+    if (allowedRole === 'client' && !clientProfile && !isClientAccount) {
       return <Navigate to="/" replace />;
     }
   }

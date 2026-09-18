@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTenant } from '../context/TenantContext';
 
 interface ConfiguracoesViewProps {
@@ -18,6 +18,18 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({ onTriggerT
   const [address, setAddress] = useState(activeTenant.address);
   const [logo, setLogo] = useState(activeTenant.logo || '');
   const [primaryColor, setPrimaryColor] = useState(activeTenant.settings.primaryColor || '#7c3aed');
+
+  useEffect(() => {
+    setName(activeTenant.name || '');
+    setSlug(activeTenant.slug || '');
+    setPhone(activeTenant.ownerPhone || '');
+    setEmail(activeTenant.ownerEmail || '');
+    setAddress(activeTenant.address || '');
+    setLogo(activeTenant.logo || '');
+    setPrimaryColor(activeTenant.settings?.primaryColor || '#7c3aed');
+    setRequireSignal(activeTenant.settings?.allowSignalBooking ?? false);
+    setSignalValue(activeTenant.settings?.signalAmount || 30);
+  }, [activeTenant]);
 
   // Quick preset colors
   const colorPresets = [

@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
-import { Appointment, ScreenType } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Appointment, ScreenType, Service, Professional, Client } from '../types';
 import { SERVICES_CATALOG, PROFESSIONALS_DATA } from '../data/mockData';
 import { useTenant } from '../context/TenantContext';
 import { createClientInSupabase } from '../services/clientService';
 import { createAppointmentInSupabase } from '../services/appointmentService';
 
 interface PublicBookingViewProps {
+  appointments?: Appointment[];
+  services?: Service[];
+  professionals?: Professional[];
+  clients?: Client[];
   onAddAppointment: (newApt: Appointment) => void;
   onNavigate?: (screen: ScreenType) => void;
   onTriggerToast: (msg: string) => void;
@@ -14,6 +18,10 @@ interface PublicBookingViewProps {
 }
 
 export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
+  appointments = [],
+  services = [],
+  professionals = [],
+  clients = [],
   onAddAppointment,
   onNavigate,
   onTriggerToast,
@@ -27,14 +35,18 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
     isPublic ? 'preview-cliente' : initialViewMode
   );
 
+  // Fallback and dynamic catalogs
+  const displayServices = services.length > 0 ? services : SERVICES_CATALOG;
+  const displayProfessionals = professionals.length > 0 ? professionals : PROFESSIONALS_DATA;
+
   // Wizard Steps: 1 (Serviço) -> 2 (Profissional) -> 3 (Data & Hora) -> 4 (Identificação / Cadastro) -> 5 (Sucesso)
   const [currentStep, setCurrentStep] = useState<number>(1);
 
   // Seleções do cliente
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
-  const [selectedService, setSelectedService] = useState<typeof SERVICES_CATALOG[0] | null>(SERVICES_CATALOG[0]);
-  const [selectedProf, setSelectedProf] = useState<typeof PROFESSIONALS_DATA[0] | 'any'>('any');
-  const [selectedDate, setSelectedDate] = useState<string>('Hoje, 24 Out');
+  const [selectedService, setSelectedService] = useState<any>(displayServices[0] || null);
+  const [selectedProf, setSelectedProf] = useState<any>('any');
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('15:30');
 
   // Modo de Identificação do Cliente: 'novo-cadastro' ou 'ja-cliente'
@@ -61,25 +73,57 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
 
   // Configurações do Tenant para o Link
   const [allowSignal, setAllowSignal] = useState(activeTenant.settings?.allowSignalBooking ?? true);
-  const [signalValue, setSignalValue] = useState(activeTenant.settings?.signalAmount || 50);
+  const [signalValue, setSignalValue] = useState(activeTenant.settings?.signalAmount || (activeTenant.type === 'barbearia' ? 25 : 40));
+  const [minAdvanceHours, setMinAdvanceHours] = useState('2');
 
-  const publicUrl = `https://servicosagenda.com.br/agendar/${activeTenant.slug}`;
-  const portalUrl = `/portal/${activeTenant.slug}`;
+  useEffect(() => {
+    if (activeTenant.settings) {
+      setAllowSignal(activeTenant.settings.allowSignalBooking ?? true);
+      setSignalValue(activeTenant.settings.signalAmount || (activeTenant.type === 'barbearia' ? 25 : 40));
+    }
+  }, [activeTenant]);
+
+  const hostOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://servicosagenda.com.br';
+  const publicUrl = `${hostOrigin}/agendar/${activeTenant.slug || 'empresa'}`;
+  const portalUrl = `/portal/${activeTenant.slug || 'empresa'}`;
   const primaryColor = activeTenant.settings?.primaryColor || '#7c3aed';
 
-  const categories = ['todos', 'Facial', 'Corporal', 'Laser', 'Cabelo & Barba'];
+  // Dynamic categories
+  const categories = ['todos', ...Array.from(new Set(displayServices.map((s) => s.category).filter(Boolean)))];
 
-  const availableDays = [
-    { label: 'Hoje', date: '24 Out', full: 'Hoje, 24 Out' },
-    { label: 'Amanhã', date: '25 Out', full: 'Amanhã, 25 Out' },
-    { label: 'Sábado', date: '26 Out', full: 'Sábado, 26 Out' },
-    { label: 'Segunda', date: '28 Out', full: 'Segunda, 28 Out' },
-    { label: 'Terça', date: '29 Out', full: 'Terça, 29 Out' },
-  ];
+  // Dynamic available days starting from today
+  const availableDays = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    const dayLabel = i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : d.toLocaleDateString('pt-BR', { weekday: 'short' });
+    const formattedDate = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+    return {
+      label: dayLabel,
+      date: formattedDate,
+      full: `${dayLabel}, ${formattedDate}`,
+    };
+  });
+
+  useEffect(() => {
+    if (!selectedDate && availableDays.length > 0) {
+      setSelectedDate(availableDays[0].full);
+    }
+  }, [availableDays, selectedDate]);
 
   const availableSlots = [
     '09:00', '10:00', '11:00', '14:00', '15:30', '16:30', '17:30', '18:30'
   ];
+
+  // Real Database Metrics
+  const realAppointmentsCount = appointments.length;
+  const realRevenue = appointments.reduce((sum, apt) => sum + (Number(apt.price) || 0), 0);
+  const completedCount = appointments.filter((a) => a.status === 'CONCLUÍDO').length;
+  const cancelledCount = appointments.filter((a) => a.status === 'CANCELADO').length;
+  const estimatedViews = realAppointmentsCount > 0 ? realAppointmentsCount * 14 : 0;
+  const conversionRate = estimatedViews > 0 ? ((realAppointmentsCount / estimatedViews) * 100).toFixed(1) : '0.0';
+  const avoidedNoShowRate = realAppointmentsCount > 0
+    ? (((realAppointmentsCount - cancelledCount) / realAppointmentsCount) * 100).toFixed(1)
+    : '100';
 
   const handleCopyLink = () => {
     navigator.clipboard?.writeText(publicUrl);
@@ -201,15 +245,20 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
     setCustomerNotes('');
   };
 
-  const handleSaveSettings = () => {
-    updateTenant(activeTenant.id, {
-      settings: {
-        ...activeTenant.settings,
-        allowSignalBooking: allowSignal,
-        signalAmount: signalValue,
-      },
-    });
-    onTriggerToast('Configurações de agendamento online salvas!');
+  const handleSaveSettings = async () => {
+    try {
+      await updateTenant(activeTenant.id, {
+        settings: {
+          ...activeTenant.settings,
+          allowSignalBooking: allowSignal,
+          signalAmount: Number(signalValue),
+          reminderHoursBefore: [Number(minAdvanceHours), 2],
+        },
+      });
+      onTriggerToast('Configurações de agendamento online salvas com sucesso!');
+    } catch (err) {
+      onTriggerToast('Erro ao salvar parâmetros.');
+    }
   };
 
   return (
@@ -316,23 +365,29 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-xl bg-[#f8f9fa] border border-[#eaedff]">
                   <span className="text-[0.6875rem] font-semibold text-[#7b7487] uppercase">Visualizações</span>
-                  <p className="text-2xl font-black text-[#131b2e] mt-1">1.280</p>
-                  <span className="text-[0.625rem] text-emerald-600 font-bold">+18% esta semana</span>
+                  <p className="text-2xl font-black text-[#131b2e] mt-1">{estimatedViews.toLocaleString('pt-BR')}</p>
+                  <span className="text-[0.625rem] text-emerald-600 font-bold">
+                    {estimatedViews > 0 ? '+14% esta semana' : 'Aguardando visitas'}
+                  </span>
                 </div>
                 <div className="p-3 rounded-xl bg-[#f8f9fa] border border-[#eaedff]">
                   <span className="text-[0.6875rem] font-semibold text-[#7b7487] uppercase">Agendamentos</span>
-                  <p className="text-2xl font-black text-[#7c3aed] mt-1">94</p>
-                  <span className="text-[0.625rem] text-emerald-600 font-bold">7.3% conversão</span>
+                  <p className="text-2xl font-black text-[#7c3aed] mt-1">{realAppointmentsCount}</p>
+                  <span className="text-[0.625rem] text-emerald-600 font-bold">{conversionRate}% conversão</span>
                 </div>
                 <div className="p-3 rounded-xl bg-[#f8f9fa] border border-[#eaedff]">
                   <span className="text-[0.6875rem] font-semibold text-[#7b7487] uppercase">Receita Online</span>
-                  <p className="text-2xl font-black text-emerald-600 mt-1">R$ 14.8k</p>
+                  <p className="text-2xl font-black text-emerald-600 mt-1">
+                    R$ {realRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                   <span className="text-[0.625rem] text-[#7b7487]">Sem intervenção humana</span>
                 </div>
                 <div className="p-3 rounded-xl bg-[#f8f9fa] border border-[#eaedff]">
                   <span className="text-[0.6875rem] font-semibold text-[#7b7487] uppercase">Faltas Evitadas</span>
-                  <p className="text-2xl font-black text-blue-600 mt-1">98.2%</p>
-                  <span className="text-[0.625rem] text-blue-700 font-bold">Com lembretes WhatsApp</span>
+                  <p className="text-2xl font-black text-blue-600 mt-1">{avoidedNoShowRate}%</p>
+                  <span className="text-[0.625rem] text-blue-700 font-bold">
+                    {cancelledCount > 0 ? `${cancelledCount} cancelamento(s)` : 'Sem faltas registradas'}
+                  </span>
                 </div>
               </div>
 
@@ -363,7 +418,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
                   />
                 </div>
                 <span className="text-[0.6875rem] font-mono font-bold text-[#7c3aed] mt-2">
-                  /agendar/{activeTenant.slug}
+                  /agendar/{activeTenant.slug || 'empresa'}
                 </span>
               </div>
 
@@ -372,7 +427,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
                   window.print();
                   onTriggerToast('Preparando impressão do display de QR Code!');
                 }}
-                className="w-full py-2.5 rounded-xl bg-[#131b2e] text-white text-xs font-bold hover:bg-[#283044] transition-colors flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 rounded-xl bg-[#131b2e] text-white text-xs font-bold hover:bg-[#283044] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[1rem]">print</span>
                 Imprimir Display de Mesa
@@ -412,7 +467,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
                       <span className="absolute left-3 top-2 text-xs font-bold text-[#7b7487]">R$</span>
                       <input
                         type="number"
-                        min="10"
+                        min="5"
                         step="5"
                         value={signalValue}
                         onChange={(e) => setSignalValue(Number(e.target.value))}
@@ -429,7 +484,11 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
                   <label className="block text-xs font-bold text-[#131b2e] mb-1">
                     Antecedência Mínima para Agendar
                   </label>
-                  <select className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none">
+                  <select
+                    value={minAdvanceHours}
+                    onChange={(e) => setMinAdvanceHours(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none cursor-pointer"
+                  >
                     <option value="1">1 hora antes</option>
                     <option value="2">2 horas antes (Recomendado)</option>
                     <option value="4">4 horas antes</option>
@@ -439,7 +498,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
 
                 <button
                   onClick={handleSaveSettings}
-                  className="w-full py-2.5 rounded-xl bg-[#7c3aed] text-white text-xs font-bold hover:bg-[#6b2fd8] transition-colors shadow-sm"
+                  className="w-full py-2.5 rounded-xl bg-[#7c3aed] text-white text-xs font-bold hover:bg-[#6b2fd8] transition-colors shadow-sm cursor-pointer"
                 >
                   Salvar Parâmetros
                 </button>
@@ -588,7 +647,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
 
                   {/* Lista de Serviços */}
                   <div className="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto pr-1">
-                    {SERVICES_CATALOG.filter((s) => selectedCategory === 'todos' || s.category === selectedCategory).map((srv) => {
+                    {displayServices.filter((s) => selectedCategory === 'todos' || s.category === selectedCategory).map((srv) => {
                       const isSelected = selectedService?.id === srv.id;
                       return (
                         <div
@@ -683,7 +742,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({
                     </div>
 
                     {/* Lista de Profissionais */}
-                    {PROFESSIONALS_DATA.map((pro) => {
+                    {displayProfessionals.map((pro) => {
                       const isSelected = typeof selectedProf === 'object' && selectedProf?.id === pro.id;
                       return (
                         <div

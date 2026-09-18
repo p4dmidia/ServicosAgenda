@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { Appointment, AppointmentStatus, ScreenType } from '../types';
-import { PROFESSIONALS_DATA, SERVICES_CATALOG } from '../data/mockData';
+import React, { useState, useMemo } from 'react';
+import { Appointment, AppointmentStatus, ScreenType, Professional } from '../types';
 import { useTenant } from '../context/TenantContext';
 
 interface AgendaViewProps {
@@ -9,6 +8,7 @@ interface AgendaViewProps {
   onOpenWhatsAppChat: (phone?: string, name?: string) => void;
   onNavigate?: (screen: ScreenType) => void;
   appointments: Appointment[];
+  professionals?: Professional[];
   onUpdateAppointmentStatus?: (id: string, newStatus: AppointmentStatus) => void;
   onAddAppointment?: (apt: Appointment) => void;
 }
@@ -26,52 +26,94 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   onTriggerToast,
   onOpenWhatsAppChat,
   onNavigate,
-  appointments,
+  appointments = [],
+  professionals = [],
   onUpdateAppointmentStatus,
   onAddAppointment,
 }) => {
   const { activeTenant } = useTenant();
   const [viewMode, setViewMode] = useState<'diaria' | 'semanal'>('diaria');
   const [selectedProf, setSelectedProf] = useState<string>('todos');
-  const [selectedDateIndex, setSelectedDateIndex] = useState(3); // Quinta-feira
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
 
+  // Dynamic calculation of current week days
+  const weekDays = useMemo(() => {
+    const today = new Date();
+    const currentDay = today.getDay(); // 0 is Sun, 1 is Mon
+    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + mondayOffset);
+
+    const daysShort = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const fullWeekDays = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+
+    return daysShort.map((label, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dayNum = d.getDate();
+      const monthShort = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
+      const isToday = d.toDateString() === today.toDateString();
+      const fullMonth = d.toLocaleString('pt-BR', { month: 'long' });
+      const full = `${fullWeekDays[i]}, ${dayNum} de ${fullMonth}${isToday ? ' (Hoje)' : ''}`;
+
+      return {
+        label,
+        day: `${dayNum} ${monthShort.charAt(0).toUpperCase() + monthShort.slice(1)}${isToday ? ' (Hoje)' : ''}`,
+        full,
+        isoDate: d.toISOString().split('T')[0],
+        isToday,
+      };
+    });
+  }, []);
+
+  const todayIndex = useMemo(() => {
+    const idx = weekDays.findIndex((w) => w.isToday);
+    return idx >= 0 ? idx : 0;
+  }, [weekDays]);
+
+  const [selectedDateIndex, setSelectedDateIndex] = useState(todayIndex);
+
+  // Active list of professionals (either from props or derived from appointments)
+  const activeProfs = useMemo(() => {
+    if (professionals.length > 0) return professionals;
+    // Derive unique professionals from appointments
+    const uniqueNames = Array.from(new Set(appointments.map((a) => a.professional).filter(Boolean)));
+    if (uniqueNames.length > 0) {
+      return uniqueNames.map((name, i) => ({
+        id: `prof-derived-${i}`,
+        name,
+        role: 'Especialista',
+        initials: name.slice(0, 2).toUpperCase(),
+        activeAppointments: 0,
+        capacityPercent: 70,
+        colorClass: 'bg-[#7c3aed]',
+      }));
+    }
+    return [
+      {
+        id: 'prof-default',
+        name: activeTenant.ownerName || 'Profissional Principal',
+        role: 'Responsável',
+        initials: (activeTenant.ownerName || 'PR').slice(0, 2).toUpperCase(),
+        activeAppointments: 0,
+        capacityPercent: 80,
+        colorClass: 'bg-[#7c3aed]',
+      },
+    ];
+  }, [professionals, appointments, activeTenant.ownerName]);
+
   // Blocked slots state
-  const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([
-    {
-      id: 'block-1',
-      professional: 'Dr. Rafael',
-      time: '12:00',
-      duration: '60 min',
-      reason: 'Intervalo de Almoço',
-    },
-    {
-      id: 'block-2',
-      professional: 'Dra. Fernanda',
-      time: '12:30',
-      duration: '30 min',
-      reason: 'Higienização de Consultório',
-    },
-  ]);
+  const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
 
   // Form for blocking slot
   const [blockForm, setBlockForm] = useState({
-    professional: PROFESSIONALS_DATA[0].name,
+    professional: activeProfs[0]?.name || 'Profissional',
     time: '12:00',
     duration: '30 min',
-    reason: 'Higienização e Esterilização',
+    reason: 'Intervalo / Almoço',
   });
 
-  const weekDays = [
-    { label: 'Seg', day: '21 Out', full: 'Segunda-feira, 21 de Outubro' },
-    { label: 'Ter', day: '22 Out', full: 'Terça-feira, 22 de Outubro' },
-    { label: 'Qua', day: '23 Out', full: 'Quarta-feira, 23 de Outubro' },
-    { label: 'Qui', day: '24 Out (Hoje)', full: 'Quinta-feira, 24 de Outubro (Hoje)' },
-    { label: 'Sex', day: '25 Out', full: 'Sexta-feira, 25 de Outubro' },
-    { label: 'Sáb', day: '26 Out', full: 'Sábado, 26 de Outubro' },
-  ];
-
-  const currentDateObj = weekDays[selectedDateIndex] || weekDays[3];
+  const currentDateObj = weekDays[selectedDateIndex] || weekDays[0];
 
   const timeSlots = [
     '08:00', '09:00', '10:00', '11:00', '12:00',
@@ -94,7 +136,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
     e.preventDefault();
     const newBlock: BlockedSlot = {
       id: `block-${Date.now()}`,
-      professional: blockForm.professional,
+      professional: blockForm.professional || activeProfs[0]?.name || 'Geral',
       time: blockForm.time,
       duration: blockForm.duration,
       reason: blockForm.reason,
@@ -205,7 +247,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               className="bg-transparent font-bold text-[#630ed4] outline-none cursor-pointer"
             >
               <option value="todos">Todos especialistas</option>
-              {PROFESSIONALS_DATA.map((p) => (
+              {activeProfs.map((p) => (
                 <option key={p.id} value={p.name}>
                   {p.name}
                 </option>
@@ -239,7 +281,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             <span className="material-symbols-outlined text-[1.25rem]">chevron_right</span>
           </button>
           <button
-            onClick={() => setSelectedDateIndex(3)}
+            onClick={() => setSelectedDateIndex(todayIndex)}
             className="ml-2 px-2.5 py-1 text-xs font-semibold rounded-md bg-[#eaedff] text-[#630ed4] hover:bg-[#dae2fd]"
             type="button"
           >
@@ -269,16 +311,18 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
       {/* VISÃO 1: GRADE DIÁRIA POR PROFISSIONAL */}
       {viewMode === 'diaria' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
-          {PROFESSIONALS_DATA.filter(
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+          {activeProfs.filter(
             (p) => selectedProf === 'todos' || p.name.toLowerCase().includes(selectedProf.toLowerCase())
           ).map((prof) => {
-            const profAppointments = appointments.filter((a) =>
-              a.professional.toLowerCase().includes(prof.name.toLowerCase().replace('dra. ', '').replace('dr. ', ''))
+            const profAppointments = filteredAppointments.filter((a) =>
+              a.professional.toLowerCase().includes(prof.name.toLowerCase()) ||
+              prof.name.toLowerCase().includes(a.professional.toLowerCase())
             );
 
             const profBlocks = blockedSlots.filter((b) =>
-              b.professional.toLowerCase().includes(prof.name.toLowerCase().replace('dra. ', '').replace('dr. ', ''))
+              b.professional.toLowerCase().includes(prof.name.toLowerCase()) ||
+              prof.name.toLowerCase().includes(b.professional.toLowerCase())
             );
 
             return (
@@ -290,155 +334,127 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                 <div className="p-4 bg-[#f2f3ff] border-b border-[#eaedff] flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div
-                      className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs text-white ${
-                        prof.initials === 'DF'
-                          ? 'bg-[#7c3aed]'
-                          : prof.initials === 'DR'
-                          ? 'bg-[#6e3aca]'
-                          : prof.initials === 'DC'
-                          ? 'bg-[#524584]'
-                          : 'bg-[#4a4455]'
-                      }`}
+                      className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs text-white ${prof.colorClass || 'bg-[#7c3aed]'}`}
                     >
-                      {prof.initials}
+                      {prof.initials || prof.name.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <h3 className="font-semibold text-sm text-[#131b2e] leading-tight">
+                      <h3 className="font-bold text-sm text-[#131b2e] leading-snug">
                         {prof.name}
                       </h3>
-                      <p className="text-[0.6875rem] text-[#4a4455]">{prof.role}</p>
+                      <p className="text-[0.6875rem] text-[#4a4455] font-medium">{prof.role}</p>
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-[#630ed4] px-2 py-0.5 rounded-full bg-white shadow-2xs">
-                    {profAppointments.length} atendimentos
+                  <span className="text-xs font-bold text-[#630ed4] px-2 py-0.5 rounded-full bg-white border border-[#eaedff]">
+                    {profAppointments.length} agendamentos
                   </span>
                 </div>
 
-                {/* Slots List */}
-                <div className="p-3 flex flex-col gap-3 min-h-[420px] bg-slate-50/50">
-                  {/* Blocked Slots for this professional */}
-                  {profBlocks.map((block) => (
-                    <div
-                      key={block.id}
-                      className="p-3 rounded-xl border border-amber-300 bg-amber-50/80 flex flex-col gap-1.5 relative group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-900">
-                          <span className="material-symbols-outlined text-[1rem]">lock</span>
-                          {block.time} ({block.duration})
-                        </span>
-                        <button
-                          onClick={() => handleDeleteBlock(block.id)}
-                          className="text-amber-800 hover:text-rose-600 p-0.5"
-                          title="Desbloquear horário"
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined text-[1rem]">delete</span>
-                        </button>
-                      </div>
-                      <p className="text-xs font-medium text-amber-950">{block.reason}</p>
-                      <span className="text-[0.625rem] text-amber-800 uppercase tracking-wider font-semibold">
-                        Horário Indisponível
-                      </span>
-                    </div>
-                  ))}
-
-                  {/* Appointments for this professional */}
+                {/* Slots & Appointments list */}
+                <div className="p-3 flex flex-col gap-2.5 min-h-[360px] bg-slate-50/50">
                   {profAppointments.length === 0 && profBlocks.length === 0 ? (
-                    <div className="h-48 flex flex-col items-center justify-center text-center p-4 text-[#7b7487]">
-                      <span className="material-symbols-outlined text-[2rem] opacity-30 mb-1">
-                        event_available
-                      </span>
-                      <p className="text-xs">Nenhum atendimento agendado</p>
+                    <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center">
+                      <span className="material-symbols-outlined text-[1.75rem] text-slate-300 mb-1">event_available</span>
+                      <p className="text-xs font-medium">Grade livre hoje</p>
                       <button
                         onClick={onOpenNewAppointment}
-                        className="mt-2 text-xs text-[#630ed4] font-semibold hover:underline"
-                        type="button"
+                        className="mt-2 text-xs font-semibold text-[#630ed4] hover:underline"
                       >
                         + Agendar horário
                       </button>
                     </div>
                   ) : (
-                    profAppointments.map((apt) => (
-                      <div
-                        key={apt.id}
-                        className={`p-3 rounded-xl border transition-all flex flex-col gap-2 shadow-2xs ${
-                          apt.status === 'CONCLUIDO'
-                            ? 'bg-emerald-50/60 border-emerald-200'
-                            : apt.status === 'CANCELADO'
-                            ? 'bg-rose-50/60 border-rose-200 opacity-70'
-                            : apt.status === 'NAO_COMPARECEU'
-                            ? 'bg-red-50 border-red-300'
-                            : 'bg-white border-[#eaedff] hover:border-[#7c3aed]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-[#630ed4] px-2 py-0.5 rounded bg-[#eaddff]">
-                            {apt.time}
-                          </span>
-
-                          {/* Interactive Status Badge / Selector */}
-                          <select
-                            aria-label="Alterar status do agendamento"
-                            value={apt.status}
-                            onChange={(e) => handleStatusChange(apt.id, e.target.value as AppointmentStatus)}
-                            className={`text-[0.625rem] font-bold px-2 py-1 rounded-lg border outline-none cursor-pointer ${
-                              apt.status === 'CONFIRMADO'
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                : apt.status === 'CONCLUIDO'
-                                ? 'bg-emerald-700 text-white border-emerald-800'
-                                : apt.status === 'CANCELADO'
-                                ? 'bg-rose-100 text-rose-800 border-rose-300'
-                                : apt.status === 'NAO_COMPARECEU'
-                                ? 'bg-red-600 text-white border-red-700 font-extrabold'
-                                : apt.status === 'AGUARDANDO CONFIRMAÇÃO'
-                                ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                : 'bg-[#eaddff] text-[#630ed4] border-[#d2bbff]'
-                            }`}
+                    <>
+                      {/* Blocked slots */}
+                      {profBlocks.map((b) => (
+                        <div
+                          key={b.id}
+                          className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between shadow-2xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[1.125rem] text-amber-600">block</span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-xs">{b.time}</span>
+                                <span className="text-[0.6875rem] text-amber-700 font-medium">({b.duration})</span>
+                              </div>
+                              <p className="text-xs font-semibold text-amber-950 mt-0.5">{b.reason}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteBlock(b.id)}
+                            className="p-1 text-amber-700 hover:text-rose-600 rounded"
+                            title="Desbloquear"
                           >
-                            <option value="AGENDADO">Agendado</option>
-                            <option value="AGUARDANDO CONFIRMAÇÃO">Aguardando Confirmação</option>
-                            <option value="CONFIRMADO">Confirmado</option>
-                            <option value="EM ATENDIMENTO">Em Atendimento</option>
-                            <option value="CONCLUIDO">Concluído</option>
-                            <option value="NAO_COMPARECEU">Não Compareceu (No-Show)</option>
-                            <option value="CANCELADO">Cancelado</option>
-                          </select>
+                            <span className="material-symbols-outlined text-[1rem]">close</span>
+                          </button>
                         </div>
+                      ))}
 
-                        <div>
-                          <p className="text-xs font-bold text-[#131b2e] leading-snug">{apt.clientName}</p>
-                          <p className="text-[0.6875rem] text-[#4a4455] mt-0.5">{apt.service}</p>
-                        </div>
+                      {/* Appointments */}
+                      {profAppointments.map((apt) => (
+                        <div
+                          key={apt.id}
+                          className="p-3 rounded-lg bg-white border border-[#eaedff] shadow-xs flex flex-col gap-2 hover:shadow-md transition-shadow group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-[#131b2e] flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[0.875rem] text-[#630ed4]">schedule</span>
+                              {apt.time}
+                            </span>
+                            <span
+                              className={`text-[0.625rem] font-bold px-2 py-0.5 rounded-full ${
+                                apt.status === 'CONFIRMADO'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : apt.status === 'CONCLUIDO'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : apt.status === 'AGUARDANDO CONFIRMAÇÃO'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-[#ebddff] text-[#581db3]'
+                              }`}
+                            >
+                              {apt.status}
+                            </span>
+                          </div>
 
-                        <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[0.6875rem] text-[#7b7487]">
-                          <span className="flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[0.875rem]">schedule</span>
-                            {apt.duration || '60 min'}
-                            {apt.price ? ` • R$ ${apt.price}` : ''}
-                          </span>
+                          <div>
+                            <h4 className="font-bold text-xs sm:text-sm text-[#131b2e] leading-tight">
+                              {apt.clientName}
+                            </h4>
+                            <p className="text-xs text-[#4a4455] mt-0.5">{apt.service}</p>
+                            <p className="text-[0.6875rem] text-slate-400 mt-0.5">R$ {apt.price} • {apt.duration || '30 min'}</p>
+                          </div>
 
-                          <div className="flex items-center gap-1">
+                          {/* Quick Actions Footer */}
+                          <div className="flex items-center justify-between pt-2 border-t border-[#eaedff] text-xs">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleStatusChange(apt.id, 'CONCLUIDO')}
+                                className="px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold text-[0.6875rem]"
+                                title="Marcar como concluído"
+                              >
+                                Concluir
+                              </button>
+                              <button
+                                onClick={() => handleStatusChange(apt.id, 'CANCELADO')}
+                                className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-[0.6875rem]"
+                                title="Cancelar agendamento"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+
                             <button
                               onClick={() => onOpenWhatsAppChat(apt.clientPhone, apt.clientName)}
-                              className="text-emerald-600 hover:text-emerald-700 p-1 rounded hover:bg-emerald-50"
-                              title="Conversar no WhatsApp"
-                              type="button"
+                              className="p-1 rounded text-emerald-600 hover:bg-emerald-50"
+                              title="Abrir WhatsApp"
                             >
                               <span className="material-symbols-outlined text-[1.125rem]">chat</span>
                             </button>
-                            <button
-                              onClick={() => onTriggerToast(`Opções avançadas de ${apt.clientName}`)}
-                              className="text-[#7b7487] hover:text-[#131b2e] p-1 rounded hover:bg-[#f2f3ff]"
-                              type="button"
-                              title="Mais opções"
-                            >
-                              <span className="material-symbols-outlined text-[1.125rem]">more_vert</span>
-                            </button>
                           </div>
                         </div>
-                      </div>
-                    ))
+                      ))}
+                    </>
                   )}
                 </div>
               </div>
@@ -447,63 +463,47 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         </div>
       )}
 
-      {/* VISÃO 2: GRADE SEMANAL (SEGUNDA A SÁBADO) */}
+      {/* VISÃO 2: GRADE SEMANAL */}
       {viewMode === 'semanal' && (
         <div className="rounded-xl bg-white shadow-sm border border-[#eaedff] overflow-hidden">
-          <div className="p-4 border-b border-[#eaedff] flex items-center justify-between">
-            <span className="font-bold text-sm text-[#131b2e]">
-              Grade de Horários da Semana (Horário comercial)
-            </span>
-            <span className="text-xs text-[#7b7487]">
-              Mostrando agendamentos e capacidade semanal
-            </span>
+          <div className="grid grid-cols-6 border-b border-[#eaedff] bg-[#f2f3ff] text-xs font-bold text-[#131b2e] text-center">
+            {weekDays.map((w, idx) => (
+              <div
+                key={w.day}
+                className={`py-3 px-2 border-r border-[#eaedff] last:border-r-0 ${
+                  selectedDateIndex === idx ? 'bg-[#eaddff] text-[#630ed4]' : ''
+                }`}
+              >
+                <span className="block text-[0.6875rem] uppercase">{w.label}</span>
+                <span className="block text-sm mt-0.5">{w.day}</span>
+              </div>
+            ))}
           </div>
 
-          <div className="overflow-x-auto">
-            <div className="min-w-[760px] grid grid-cols-7 divide-x divide-[#eaedff] border-b border-[#eaedff] text-xs font-bold text-[#4a4455] bg-[#f2f3ff]">
-              <div className="p-3 text-center">Horário</div>
-              {weekDays.map((w) => (
-                <div key={w.day} className="p-3 text-center">
-                  <span className="block text-[#630ed4]">{w.label}</span>
-                  <span className="text-[0.6875rem] text-[#7b7487]">{w.day}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="min-w-[760px] divide-y divide-[#eaedff]">
-              {timeSlots.map((time) => {
-                // Appointments matching this hour
-                const matchingApts = appointments.filter((a) => a.time.startsWith(time.slice(0, 2)));
-
-                return (
-                  <div key={time} className="grid grid-cols-7 divide-x divide-[#eaedff] text-xs hover:bg-[#f8f9fa] transition-colors">
-                    <div className="p-3 font-bold text-[#630ed4] bg-[#f2f3ff]/40 flex items-center justify-center">
-                      {time}
+          <div className="grid grid-cols-6 divide-x divide-[#eaedff] min-h-[400px] bg-slate-50/50">
+            {weekDays.map((w, idx) => {
+              const dayAppointments = filteredAppointments;
+              return (
+                <div key={w.day} className="p-2 flex flex-col gap-2">
+                  {idx === selectedDateIndex && dayAppointments.length > 0 ? (
+                    dayAppointments.map((apt) => (
+                      <div
+                        key={apt.id}
+                        className="p-2.5 rounded-lg bg-white border border-[#eaedff] shadow-2xs text-xs flex flex-col gap-1"
+                      >
+                        <span className="font-extrabold text-[#630ed4]">{apt.time}</span>
+                        <span className="font-bold text-[#131b2e] truncate">{apt.clientName}</span>
+                        <span className="text-[0.6875rem] text-[#4a4455] truncate">{apt.service}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-8 text-center text-[0.6875rem] text-slate-300">
+                      Livre
                     </div>
-
-                    {/* Monday to Saturday columns */}
-                    {weekDays.map((w, dIdx) => {
-                      const dayApts = dIdx === 3 ? matchingApts : [];
-
-                      return (
-                        <div key={w.day} className="p-2 min-h-[56px] flex flex-col gap-1">
-                          {dayApts.map((apt) => (
-                            <div
-                              key={apt.id}
-                              className="p-1.5 rounded bg-[#eaddff] text-[#630ed4] border border-[#d2bbff] text-[0.6875rem] font-medium leading-tight truncate cursor-pointer hover:shadow-xs"
-                              title={`${apt.clientName} - ${apt.service} com ${apt.professional}`}
-                              onClick={() => onTriggerToast(`Detalhes: ${apt.clientName} às ${apt.time}`)}
-                            >
-                              <span className="font-bold">{apt.clientName.split(' ')[0]}</span> • {apt.service}
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -539,7 +539,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   onChange={(e) => setBlockForm({ ...blockForm, professional: e.target.value })}
                   className="h-10 px-3 rounded-lg bg-[#f2f3ff] border border-[#eaedff] text-sm text-[#131b2e] outline-none"
                 >
-                  {PROFESSIONALS_DATA.map((p) => (
+                  {activeProfs.map((p) => (
                     <option key={p.id} value={p.name}>
                       {p.name} ({p.role})
                     </option>

@@ -1,24 +1,39 @@
-import React, { useState } from 'react';
-import { Appointment } from '../types';
-import { SERVICES_CATALOG, PROFESSIONALS_DATA } from '../data/mockData';
+import React, { useState, useEffect } from 'react';
+import { Appointment, ServiceItem, Professional } from '../types';
 
 interface NewAppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddAppointment: (apt: Appointment) => void;
+  services?: ServiceItem[];
+  professionals?: Professional[];
 }
 
 export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   isOpen,
   onClose,
   onAddAppointment,
+  services = [],
+  professionals = [],
 }) => {
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('+55 11 ');
-  const [service, setService] = useState(SERVICES_CATALOG[0].name);
-  const [professional, setProfessional] = useState(PROFESSIONALS_DATA[0].name);
-  const [time, setTime] = useState('18:00');
+  const [service, setService] = useState('');
+  const [professional, setProfessional] = useState('');
+  const [time, setTime] = useState('09:00');
   const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (services.length > 0 && !service) {
+      setService(services[0].name);
+    }
+  }, [services, service]);
+
+  useEffect(() => {
+    if (professionals.length > 0 && !professional) {
+      setProfessional(professionals[0].name);
+    }
+  }, [professionals, professional]);
 
   if (!isOpen) return null;
 
@@ -26,7 +41,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     e.preventDefault();
     if (!clientName.trim()) return;
 
-    const matchedService = SERVICES_CATALOG.find((s) => s.name === service);
+    const matchedService = services.find((s) => s.name === service);
+    const srvName = service || (services[0]?.name ?? 'Procedimento Geral');
+    const profName = professional || (professionals[0]?.name ?? 'Especialista');
 
     const newApt: Appointment = {
       id: `apt-${Date.now()}`,
@@ -39,11 +56,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         .slice(0, 2)
         .join('')
         .toUpperCase(),
-      service: service,
-      professional: professional,
+      service: srvName,
+      professional: profName,
       status: 'CONFIRMADO',
-      price: matchedService?.price || 250,
-      duration: matchedService?.duration || '45 min',
+      price: matchedService?.price || 65,
+      duration: matchedService?.duration || '30 min',
     };
 
     onAddAppointment(newApt);
@@ -113,34 +130,54 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               <label className="text-xs font-semibold text-[#131b2e] block mb-1">
                 Procedimento *
               </label>
-              <select
-                value={service}
-                onChange={(e) => setService(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs sm:text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed] bg-white cursor-pointer"
-              >
-                {SERVICES_CATALOG.map((s) => (
-                  <option key={s.id} value={s.name}>
-                    {s.name} (R$ {s.price})
-                  </option>
-                ))}
-              </select>
+              {services.length === 0 ? (
+                <input
+                  type="text"
+                  value={service}
+                  onChange={(e) => setService(e.target.value)}
+                  placeholder="Nome do procedimento"
+                  className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs sm:text-sm text-[#131b2e]"
+                />
+              ) : (
+                <select
+                  value={service}
+                  onChange={(e) => setService(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs sm:text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed] bg-white cursor-pointer"
+                >
+                  {services.map((s) => (
+                    <option key={s.id} value={s.name}>
+                      {s.name} (R$ {s.price})
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>
               <label className="text-xs font-semibold text-[#131b2e] block mb-1">
                 Profissional *
               </label>
-              <select
-                value={professional}
-                onChange={(e) => setProfessional(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs sm:text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed] bg-white cursor-pointer"
-              >
-                {PROFESSIONALS_DATA.map((p) => (
-                  <option key={p.id} value={p.name}>
-                    {p.name} - {p.role}
-                  </option>
-                ))}
-              </select>
+              {professionals.length === 0 ? (
+                <input
+                  type="text"
+                  value={professional}
+                  onChange={(e) => setProfessional(e.target.value)}
+                  placeholder="Nome do profissional"
+                  className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs sm:text-sm text-[#131b2e]"
+                />
+              ) : (
+                <select
+                  value={professional}
+                  onChange={(e) => setProfessional(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs sm:text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed] bg-white cursor-pointer"
+                >
+                  {professionals.map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name} - {p.role}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
 
@@ -154,7 +191,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 onChange={(e) => setTime(e.target.value)}
                 className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs sm:text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed] bg-white cursor-pointer"
               >
-                {['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'].map(
+                {['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'].map(
                   (t) => (
                     <option key={t} value={t}>
                       {t}
@@ -177,13 +214,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
           <div>
             <label className="text-xs font-semibold text-[#131b2e] block mb-1">
-              Observações Clínicas (Opcional)
+              Observações (Opcional)
             </label>
             <textarea
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ex: Primeira sessão de rejuvenescimento facial..."
+              placeholder="Ex: Primeira visita, preferência por corte na tesoura..."
               className="w-full p-2.5 rounded-lg border border-[#cbd5e1] text-xs sm:text-sm text-[#131b2e] focus:outline-none focus:border-[#7c3aed]"
             />
           </div>

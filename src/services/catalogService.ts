@@ -1,52 +1,8 @@
 import { supabase } from '../lib/supabase';
 import { ServiceItem, Professional } from '../types';
 
-const CLINIC_SERVICES_FALLBACK: ServiceItem[] = [
+export const BARBERSHOP_SERVICES_DEFAULT: Array<Omit<ServiceItem, 'id' | 'tenantId'>> = [
   {
-    id: 'srv-bv-1',
-    name: 'Harmonização Facial Completa',
-    category: 'Estética Avançada',
-    duration: '90 min',
-    price: 1800,
-    description: 'Protocolo personalizado com ácido hialurônico para volumização e contorno facial.',
-  },
-  {
-    id: 'srv-bv-2',
-    name: 'Bioestimulador de Colágeno',
-    category: 'Estética Avançada',
-    duration: '60 min',
-    price: 1400,
-    description: 'Estímulo de neocolagênese para rejuvenescimento e firmeza tecidual.',
-  },
-  {
-    id: 'srv-bv-3',
-    name: 'Limpeza de Pele Profunda',
-    category: 'Cuidados Básicos',
-    duration: '60 min',
-    price: 240,
-    description: 'Extração por sucção, alta frequência e máscara calmante hidrolipídica.',
-  },
-  {
-    id: 'srv-bv-4',
-    name: 'Peeling Químico Renovador',
-    category: 'Dermatologia',
-    duration: '45 min',
-    price: 450,
-    description: 'Renovação celular intensa para uniformização de tom e textura.',
-  },
-  {
-    id: 'srv-bv-5',
-    name: 'Consulta Dermatológica',
-    category: 'Clínica Geral',
-    duration: '45 min',
-    price: 350,
-    description: 'Diagnóstico clínico detalhado e prescrição de rotina médica de skincare.',
-  },
-];
-
-const BARBERSHOP_SERVICES_FALLBACK: ServiceItem[] = [
-  {
-    id: 'srv-dc-1',
     name: 'Corte Tradicional na Tesoura & Máquina',
     category: 'Cabelo',
     duration: '40 min',
@@ -54,7 +10,6 @@ const BARBERSHOP_SERVICES_FALLBACK: ServiceItem[] = [
     description: 'Corte personalizado com finalização e lavagem especial com produtos premium.',
   },
   {
-    id: 'srv-dc-2',
     name: 'Barboterapia & Toalha Quente',
     category: 'Barba',
     duration: '35 min',
@@ -62,103 +17,59 @@ const BARBERSHOP_SERVICES_FALLBACK: ServiceItem[] = [
     description: 'Design de barba com navalha, toalha quente aromática e óleos hidratantes.',
   },
   {
-    id: 'srv-dc-3',
-    name: 'Combo Dom Camilo (Cabelo + Barba)',
-    category: 'Combos VIP',
+    name: 'Combo Completo (Cabelo + Barba)',
+    category: 'Combos',
     duration: '70 min',
     price: 110,
-    description: 'Experiência completa com corte, alinhamento de barba e cerveja artesanal.',
+    description: 'Experiência completa com corte, alinhamento de barba e finalização.',
   },
   {
-    id: 'srv-dc-4',
     name: 'Camuflagem de Grisalhos',
     category: 'Tratamentos',
     duration: '30 min',
     price: 70,
     description: 'Tonalização sutil e discreta para rejuvenescimento natural dos fios.',
   },
+];
+
+export const CLINIC_SERVICES_DEFAULT: Array<Omit<ServiceItem, 'id' | 'tenantId'>> = [
   {
-    id: 'srv-dc-5',
-    name: 'Limpeza de Pele Express Masculina',
-    category: 'Estética Masculina',
+    name: 'Limpeza de Pele Profunda',
+    category: 'Cuidados Básicos',
+    duration: '60 min',
+    price: 180,
+    description: 'Higienização profunda com extração de cravos, vapor de ozônio e máscara calmante.',
+  },
+  {
+    name: 'Harmonização Facial / Botox',
+    category: 'Estética Avançada',
+    duration: '45 min',
+    price: 850,
+    description: 'Procedimento estético avançado para contorno, volumização e atenuação de linhas.',
+  },
+  {
+    name: 'Massagem Modeladora & Drenagem',
+    category: 'Corporal',
+    duration: '50 min',
+    price: 150,
+    description: 'Manobras intensas para redução de medidas aliadas à drenagem linfática.',
+  },
+  {
+    name: 'Consulta de Avaliação Estética',
+    category: 'Clínica Geral',
     duration: '30 min',
-    price: 80,
-    description: 'Esfoliação com carvão ativado, máscara preta e hidratação com filtro solar.',
+    price: 120,
+    description: 'Diagnóstico clínico detalhado e prescrição de plano personalizado de cuidados.',
   },
 ];
 
-const CLINIC_PROFESSIONALS_FALLBACK: Professional[] = [
-  {
-    id: 'prof-bv-1',
-    name: 'Dra. Fernanda Lins',
-    role: 'Biomédica Esteta',
-    initials: 'FL',
-    activeAppointments: 6,
-    capacityPercent: 85,
-    colorClass: 'bg-purple-600',
-    photo: 'https://images.unsplash.com/photo-1594824813572-c2cb006c3eb9?w=100&auto=format&fit=crop&q=60',
-  },
-  {
-    id: 'prof-bv-2',
-    name: 'Dr. Rafael Moreira',
-    role: 'Dermatologista Clínico',
-    initials: 'RM',
-    activeAppointments: 4,
-    capacityPercent: 70,
-    colorClass: 'bg-indigo-600',
-    photo: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=100&auto=format&fit=crop&q=60',
-  },
-  {
-    id: 'prof-bv-3',
-    name: 'Dra. Camila Duarte',
-    role: 'Harmonizadora Facial',
-    initials: 'CD',
-    activeAppointments: 3,
-    capacityPercent: 60,
-    colorClass: 'bg-pink-600',
-    photo: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=100&auto=format&fit=crop&q=60',
-  },
-];
-
-const BARBERSHOP_PROFESSIONALS_FALLBACK: Professional[] = [
-  {
-    id: 'prof-dc-1',
-    name: 'Camilo Augusto (Mestre Barbeiro)',
-    role: 'Barbeiro Chefe & Visagista',
-    initials: 'CA',
-    activeAppointments: 8,
-    capacityPercent: 90,
-    colorClass: 'bg-amber-700',
-    photo: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=100&auto=format&fit=crop&q=60',
-  },
-  {
-    id: 'prof-dc-2',
-    name: 'Marcos Silva (Navalha de Ouro)',
-    role: 'Especialista em Degrade & Freestyle',
-    initials: 'MS',
-    activeAppointments: 5,
-    capacityPercent: 75,
-    colorClass: 'bg-orange-700',
-    photo: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=60',
-  },
-  {
-    id: 'prof-dc-3',
-    name: 'Lucas Pires',
-    role: 'Barbeiro & Cuidados com Barba',
-    initials: 'LP',
-    activeAppointments: 4,
-    capacityPercent: 65,
-    colorClass: 'bg-stone-700',
-  },
-];
-
-export async function fetchServicesFromSupabase(tenantId?: string, segment?: string): Promise<ServiceItem[]> {
+export async function fetchServicesFromSupabase(tenantId?: string): Promise<ServiceItem[]> {
   try {
     let query = supabase
       .from('services')
       .select('*')
       .eq('is_active', true)
-      .order('name', { ascending: true });
+      .order('created_at', { ascending: true });
 
     if (tenantId) {
       query = query.eq('tenant_id', tenantId);
@@ -178,23 +89,68 @@ export async function fetchServicesFromSupabase(tenantId?: string, segment?: str
       }));
     }
   } catch (err) {
-    console.warn('Erro ao buscar serviços do Supabase, aplicando fallback:', err);
+    console.warn('Erro ao buscar serviços do Supabase:', err);
   }
 
-  // Fallback baseado no tenant / segmento
-  if (tenantId === '22222222-2222-2222-2222-222222222222' || segment === 'barbearia') {
-    return BARBERSHOP_SERVICES_FALLBACK;
-  }
-  return CLINIC_SERVICES_FALLBACK;
+  return [];
 }
 
-export async function fetchProfessionalsFromSupabase(tenantId?: string, segment?: string): Promise<Professional[]> {
+export async function createServiceInSupabase(
+  tenantId: string,
+  service: Omit<ServiceItem, 'id' | 'tenantId'>
+): Promise<ServiceItem> {
+  const durationNum = parseInt(service.duration?.replace(/\D/g, '') || '30', 10);
+  const payload = {
+    tenant_id: tenantId,
+    name: service.name,
+    category: service.category || 'Geral',
+    duration_minutes: durationNum,
+    price: service.price,
+    description: service.description || '',
+    is_active: true,
+  };
+
+  const { data, error } = await supabase
+    .from('services')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Erro ao criar serviço no Supabase:', error);
+    throw error;
+  }
+
+  return {
+    id: data.id,
+    tenantId: data.tenant_id,
+    name: data.name,
+    category: data.category,
+    duration: `${data.duration_minutes} min`,
+    price: Number(data.price),
+    description: data.description || '',
+  };
+}
+
+export async function deleteServiceInSupabase(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('services')
+    .update({ is_active: false })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Erro ao inativar serviço no Supabase:', error);
+    throw error;
+  }
+}
+
+export async function fetchProfessionalsFromSupabase(tenantId?: string): Promise<Professional[]> {
   try {
     let query = supabase
       .from('professionals')
       .select('*')
       .eq('is_active', true)
-      .order('name', { ascending: true });
+      .order('created_at', { ascending: true });
 
     if (tenantId) {
       query = query.eq('tenant_id', tenantId);
@@ -218,20 +174,124 @@ export async function fetchProfessionalsFromSupabase(tenantId?: string, segment?
           role: row.role || 'Especialista',
           initials,
           activeAppointments: 0,
-          capacityPercent: 80,
-          colorClass: row.color_class || 'bg-purple-500',
+          capacityPercent: 75,
+          colorClass: row.color_class || 'bg-purple-600',
           photo: row.photo_url || undefined,
         };
       });
     }
   } catch (err) {
-    console.warn('Erro ao buscar profissionais do Supabase, aplicando fallback:', err);
+    console.warn('Erro ao buscar profissionais do Supabase:', err);
   }
 
-  // Fallback baseado no tenant / segmento
-  if (tenantId === '22222222-2222-2222-2222-222222222222' || segment === 'barbearia') {
-    return BARBERSHOP_PROFESSIONALS_FALLBACK;
-  }
-  return CLINIC_PROFESSIONALS_FALLBACK;
+  return [];
 }
 
+export async function createProfessionalInSupabase(
+  tenantId: string,
+  prof: { name: string; role: string; phone?: string; email?: string; colorClass?: string; photo?: string }
+): Promise<Professional> {
+  const payload = {
+    tenant_id: tenantId,
+    name: prof.name,
+    role: prof.role || 'Especialista',
+    phone: prof.phone || null,
+    email: prof.email || null,
+    color_class: prof.colorClass || 'bg-purple-600',
+    photo_url: prof.photo || null,
+    is_active: true,
+  };
+
+  const { data, error } = await supabase
+    .from('professionals')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Erro ao cadastrar profissional no Supabase:', error);
+    throw error;
+  }
+
+  const initials = (data.name || 'Profissional')
+    .split(' ')
+    .map((n: string) => n[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  return {
+    id: data.id,
+    tenantId: data.tenant_id,
+    name: data.name,
+    role: data.role || 'Especialista',
+    initials,
+    activeAppointments: 0,
+    capacityPercent: 50,
+    colorClass: data.color_class || 'bg-purple-600',
+    photo: data.photo_url || undefined,
+  };
+}
+
+export async function deleteProfessionalInSupabase(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('professionals')
+    .update({ is_active: false })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Erro ao desativar profissional no Supabase:', error);
+    throw error;
+  }
+}
+
+/**
+ * Auto-provisions real seed items in Supabase for a newly registered tenant
+ */
+export async function seedInitialTenantCatalog(tenantId: string, segment: string, ownerName?: string): Promise<void> {
+  try {
+    const isBarber = segment?.toLowerCase().includes('barbearia');
+    const defaultServices = isBarber ? BARBERSHOP_SERVICES_DEFAULT : CLINIC_SERVICES_DEFAULT;
+
+    // 1. Check if services exist
+    const { data: existingServices } = await supabase
+      .from('services')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .limit(1);
+
+    if (!existingServices || existingServices.length === 0) {
+      const servicesPayload = defaultServices.map((s) => ({
+        tenant_id: tenantId,
+        name: s.name,
+        category: s.category,
+        duration_minutes: parseInt(s.duration.replace(/\D/g, ''), 10) || 30,
+        price: s.price,
+        description: s.description,
+        is_active: true,
+      }));
+      await supabase.from('services').insert(servicesPayload);
+    }
+
+    // 2. Check if professional exists
+    const { data: existingProfs } = await supabase
+      .from('professionals')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .limit(1);
+
+    if (!existingProfs || existingProfs.length === 0) {
+      const profName = ownerName || (isBarber ? 'Barbeiro Principal' : 'Especialista Principal');
+      const profRole = isBarber ? 'Barbeiro & Visagista' : 'Responsável Técnico / Especialista';
+      await supabase.from('professionals').insert({
+        tenant_id: tenantId,
+        name: profName,
+        role: profRole,
+        color_class: isBarber ? 'bg-amber-600' : 'bg-purple-600',
+        is_active: true,
+      });
+    }
+  } catch (err) {
+    console.warn('Aviso ao provisionar catálogo inicial do tenant:', err);
+  }
+}

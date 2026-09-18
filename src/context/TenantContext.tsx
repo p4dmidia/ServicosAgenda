@@ -4,8 +4,10 @@ import {
   fetchTenantsFromSupabase,
   createTenantInSupabase,
   updateTenantInSupabase,
+  mapDbTenantToAppTenant,
 } from '../services/tenantService';
 import { checkSupabaseConnection } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 
 export const INITIAL_TENANTS: Tenant[] = [
   {
@@ -78,6 +80,8 @@ interface TenantContextType {
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
 export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { activeMembership, isSuperAdmin } = useAuth();
+
   const [tenants, setTenants] = useState<Tenant[]>(() => {
     const saved = localStorage.getItem('saas_tenants');
     return saved ? JSON.parse(saved) : INITIAL_TENANTS;
@@ -91,18 +95,32 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(false);
   const [isLoadingTenants, setIsLoadingTenants] = useState<boolean>(false);
 
-  // Sync with Supabase on mount
+  // Sync activeTenantId with activeMembership if user is logged in
+  useEffect(() => {
+    if (activeMembership?.tenants && !isImpersonating) {
+      const membershipTenant = mapDbTenantToAppTenant(activeMembership.tenants);
+      setTenants((prev) => {
+        const exists = prev.some((t) => t.id === membershipTenant.id);
+        if (exists) {
+          return prev.map((t) => (t.id === membershipTenant.id ? { ...t, ...membershipTenant } : t));
+        }
+        return [membershipTenant, ...prev];
+      });
+      setActiveTenantId(membershipTenant.id);
+    }
+  }, [activeMembership, isImpersonating]);
+
+  // Sync with Supabase on mount (only super admin loads the full platform tenants)
   const refreshTenants = useCallback(async () => {
     setIsLoadingTenants(true);
     try {
       const ping = await checkSupabaseConnection();
       setIsSupabaseConnected(ping.connected);
 
-      if (ping.connected) {
+      if (ping.connected && isSuperAdmin) {
         const remoteTenants = await fetchTenantsFromSupabase();
         if (remoteTenants && remoteTenants.length > 0) {
           setTenants(remoteTenants);
-          // If current activeTenantId doesn't exist in remote, switch to first remote
           if (!remoteTenants.some(t => t.id === activeTenantId)) {
             setActiveTenantId(remoteTenants[0].id);
           }
@@ -113,7 +131,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } finally {
       setIsLoadingTenants(false);
     }
-  }, [activeTenantId]);
+  }, [activeTenantId, isSuperAdmin]);
 
   useEffect(() => {
     refreshTenants();
@@ -127,7 +145,10 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     localStorage.setItem('saas_active_tenant_id', activeTenantId);
   }, [activeTenantId]);
 
-  const activeTenant = tenants.find((t) => t.id === activeTenantId) || tenants[0] || INITIAL_TENANTS[0];
+  const activeTenant = tenants.find((t) => t.id === activeTenantId) ||
+    (activeMembership?.tenants ? mapDbTenantToAppTenant(activeMembership.tenants) : null) ||
+    tenants[0] ||
+    INITIAL_TENANTS[0];
 
   const switchTenant = (tenantId: string) => {
     const found = tenants.find((t) => t.id === tenantId);

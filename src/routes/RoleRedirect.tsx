@@ -20,13 +20,14 @@ export const RoleRedirect: React.FC = () => {
     return <Navigate to="/admin" replace />;
   }
 
-  // 2. tenantMemberships.length > 0 → /app
-  if (tenantMemberships.length > 0) {
+  // 2. tenantMemberships.length > 0 ou conta do tipo empresa → /app
+  const isClientAccount = user?.user_metadata?.account_type === 'cliente';
+  if (tenantMemberships.length > 0 || (!isClientAccount && !clientProfile)) {
     return <Navigate to="/app" replace />;
   }
 
-  // 3. clientProfile existir → /portal
-  if (clientProfile) {
+  // 3. clientProfile existir ou conta do tipo cliente → /portal
+  if (clientProfile || isClientAccount) {
     return <Navigate to="/portal" replace />;
   }
 

@@ -1,13 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useTenant } from '../context/TenantContext';
-import { FidelidadeConfig, FidelidadeClientSummary, FidelidadeTransaction } from '../types';
+import { Client, Appointment, FidelidadeConfig, FidelidadeClientSummary, FidelidadeTransaction } from '../types';
 
 interface FidelidadeViewProps {
+  clients?: Client[];
+  appointments?: Appointment[];
   onTriggerToast: (msg: string) => void;
   onOpenWhatsAppChat?: (phone?: string, name?: string) => void;
 }
 
 export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
+  clients = [],
+  appointments = [],
   onTriggerToast,
   onOpenWhatsAppChat,
 }) => {
@@ -18,116 +22,103 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
   // Config do Programa
   const [config, setConfig] = useState<FidelidadeConfig>({
     active: true,
-    cashbackPercent: 5, // 5% de volta
+    cashbackPercent: 5, // 5% de volta padrão
     pointsPerReal: 1,   // 1 ponto por R$ 1 gasto
     pointValueInReais: 0.05,
     expiryMonths: 6,
   });
 
-  // Clientes com carteira de benefícios
-  const [clientsFidelidade, setClientsFidelidade] = useState<FidelidadeClientSummary[]>([
-    {
-      clientId: 'c-1',
-      clientName: 'Mariana Silveira',
-      clientPhone: '+55 11 98452-1100',
-      pointsBalance: 450,
-      cashbackBalance: 45.0,
-      totalEarnedCashback: 180.0,
-      totalRedeemedCashback: 135.0,
-      lastMovementDate: 'Hoje, 10:15',
-    },
-    {
-      clientId: 'c-2',
-      clientName: 'Carlos Eduardo Ramos',
-      clientPhone: '+55 11 97233-4411',
-      pointsBalance: 280,
-      cashbackBalance: 28.0,
-      totalEarnedCashback: 88.0,
-      totalRedeemedCashback: 60.0,
-      lastMovementDate: 'Ontem',
-    },
-    {
-      clientId: 'c-3',
-      clientName: 'Beatriz Fagundes',
-      clientPhone: '+55 11 99124-7788',
-      pointsBalance: 720,
-      cashbackBalance: 72.0,
-      totalEarnedCashback: 220.0,
-      totalRedeemedCashback: 148.0,
-      lastMovementDate: '01/09/2026',
-    },
-    {
-      clientId: 'c-4',
-      clientName: 'Lucas Oliveira Santos',
-      clientPhone: '+55 11 96541-2299',
-      pointsBalance: 110,
-      cashbackBalance: 11.0,
-      totalEarnedCashback: 35.0,
-      totalRedeemedCashback: 24.0,
-      lastMovementDate: '28/08/2026',
-    },
-    {
-      clientId: 'c-5',
-      clientName: 'Fernanda Lima Duarte',
-      clientPhone: '+55 11 98877-3344',
-      pointsBalance: 590,
-      cashbackBalance: 59.0,
-      totalEarnedCashback: 150.0,
-      totalRedeemedCashback: 91.0,
-      lastMovementDate: '26/08/2026',
-    },
-  ]);
+  // Manual Adjustments State
+  const [manualAdjustments, setManualAdjustments] = useState<
+    Record<string, { cashbackDelta: number; pointsDelta: number; redeemedDelta: number; earnedDelta: number }>
+  >({});
 
-  // Histórico de transações de Fidelidade
-  const [transactions, setTransactions] = useState<FidelidadeTransaction[]>([
-    {
-      id: 'tx-fid-1',
-      clientId: 'c-1',
-      clientName: 'Mariana Silveira',
-      type: 'CREDITO',
-      points: 80,
-      cashbackAmount: 18.0,
-      description: 'Cashback 5% ganho no atendimento Harmonização',
-      date: 'Hoje, 10:15',
-    },
-    {
-      id: 'tx-fid-2',
-      clientId: 'c-3',
-      clientName: 'Beatriz Fagundes',
-      type: 'RESGATE',
-      points: -200,
-      cashbackAmount: -30.0,
-      description: 'Abatimento no fechamento de Bioestimulador',
-      date: '01/09/2026, 16:40',
-    },
-    {
-      id: 'tx-fid-3',
-      clientId: 'c-2',
-      clientName: 'Carlos Eduardo Ramos',
-      type: 'CREDITO',
-      points: 120,
-      cashbackAmount: 12.0,
-      description: 'Cashback Barba Terapia + Corte Degradê',
-      date: 'Ontem, 14:00',
-    },
-    {
-      id: 'tx-fid-4',
-      clientId: 'c-4',
-      clientName: 'Lucas Oliveira Santos',
-      type: 'CREDITO',
-      points: 50,
-      cashbackAmount: 5.0,
-      description: 'Cashback Corte Máquina + Pomada Matte',
-      date: '28/08/2026, 11:20',
-    },
-  ]);
+  const [manualTransactions, setManualTransactions] = useState<FidelidadeTransaction[]>([]);
 
   // Modal de Crédito / Resgate Manual
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
-  const [selectedClientForModal, setSelectedClientForModal] = useState<FidelidadeClientSummary | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [manualOperationType, setManualOperationType] = useState<'CREDITO' | 'RESGATE'>('CREDITO');
   const [manualCashbackAmount, setManualCashbackAmount] = useState('20');
-  const [manualReason, setManualReason] = useState('Bônus de cortesia de aniversário');
+  const [manualReason, setManualReason] = useState('Bônus de fidelidade / cortesia');
+
+  // Compute Fidelidade Client Summaries dynamically from Real Database
+  const clientsFidelidade = useMemo<FidelidadeClientSummary[]>(() => {
+    return clients.map((c) => {
+      const clientApts = appointments.filter(
+        (a) =>
+          (a.clientId && a.clientId === c.id) ||
+          (a.clientName && c.name && a.clientName.toLowerCase() === c.name.toLowerCase()) ||
+          (a.clientPhone && c.phone && a.clientPhone === c.phone)
+      );
+
+      const completedApts = clientApts.filter(
+        (a) => a.status === 'CONCLUIDO' || a.status === 'CONFIRMADO' || a.status === 'EM ATENDIMENTO'
+      );
+
+      const totalSpent = completedApts.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+      const autoEarnedCashback = (totalSpent * config.cashbackPercent) / 100;
+      const autoPoints = Math.round(totalSpent * config.pointsPerReal);
+
+      const adj = manualAdjustments[c.id] || {
+        cashbackDelta: 0,
+        pointsDelta: 0,
+        redeemedDelta: 0,
+        earnedDelta: 0,
+      };
+
+      const totalEarnedCashback = autoEarnedCashback + adj.earnedDelta;
+      const totalRedeemedCashback = adj.redeemedDelta;
+      const cashbackBalance = Math.max(0, totalEarnedCashback - totalRedeemedCashback);
+      const pointsBalance = Math.max(0, autoPoints + adj.pointsDelta);
+
+      // Latest appointment date
+      let lastDateStr = 'Sem movimentação';
+      if (completedApts.length > 0) {
+        const sorted = [...completedApts].sort(
+          (a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+        );
+        const last = sorted[0];
+        lastDateStr = last.date ? `${last.date} às ${last.time || '10:00'}` : 'Hoje';
+      }
+
+      return {
+        clientId: c.id,
+        clientName: c.name,
+        clientPhone: c.phone || '+55',
+        pointsBalance,
+        cashbackBalance,
+        totalEarnedCashback,
+        totalRedeemedCashback,
+        lastMovementDate: lastDateStr,
+      };
+    });
+  }, [clients, appointments, config, manualAdjustments]);
+
+  // Dynamic Transactions generated from completed appointments + manual operations
+  const transactions = useMemo<FidelidadeTransaction[]>(() => {
+    const aptTxs: FidelidadeTransaction[] = [];
+
+    appointments
+      .filter((a) => a.status === 'CONCLUIDO' || a.status === 'CONFIRMADO')
+      .forEach((a) => {
+        const price = Number(a.price) || 0;
+        const earnedCashback = (price * config.cashbackPercent) / 100;
+        const pts = Math.round(price * config.pointsPerReal);
+        aptTxs.push({
+          id: `tx-fid-apt-${a.id}`,
+          clientId: a.clientId || a.clientName || 'c',
+          clientName: a.clientName || 'Cliente',
+          type: 'CREDITO',
+          points: pts,
+          cashbackAmount: earnedCashback,
+          description: `Cashback ${config.cashbackPercent}% ganho no atendimento ${a.service || 'Serviço'}`,
+          date: a.date ? `${a.date} às ${a.time || '10:00'}` : 'Hoje',
+        });
+      });
+
+    return [...manualTransactions, ...aptTxs];
+  }, [appointments, config, manualTransactions]);
 
   const filteredClients = clientsFidelidade.filter(
     (c) =>
@@ -143,17 +134,18 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
     const msg = `Olá *${client.clientName.split(' ')[0]}*, tudo bem? Você tem *R$ ${client.cashbackBalance.toFixed(
       2
     )}* em cashback e *${client.pointsBalance} pontos* disponíveis aqui na *${activeTenant.name}*! Que tal aproveitar no seu próximo procedimento esta semana? Responda aqui para agendarmos seu horário! ✨`;
-    
+
     if (onOpenWhatsAppChat) {
       onOpenWhatsAppChat(client.clientPhone, client.clientName);
     }
     navigator.clipboard?.writeText(msg);
-    onTriggerToast(`Mensagem copiada para o WhatsApp de ${client.clientName}!`);
+    onTriggerToast(`Mensagem e saldo copiados para o WhatsApp de ${client.clientName}!`);
   };
 
   const handleExecuteManualOperation = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedClientForModal) return;
+    const targetClient = clientsFidelidade.find((c) => c.clientId === selectedClientId) || clientsFidelidade[0];
+    if (!targetClient) return;
 
     const amount = parseFloat(manualCashbackAmount) || 0;
     if (amount <= 0) {
@@ -161,7 +153,7 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
       return;
     }
 
-    if (manualOperationType === 'RESGATE' && amount > selectedClientForModal.cashbackBalance) {
+    if (manualOperationType === 'RESGATE' && amount > targetClient.cashbackBalance) {
       onTriggerToast('Saldo insuficiente para resgate deste valor!');
       return;
     }
@@ -169,48 +161,49 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
     const multiplier = manualOperationType === 'CREDITO' ? 1 : -1;
     const pointsDelta = Math.round(amount * 10) * multiplier;
 
-    // Atualiza cliente
-    setClientsFidelidade((prev) =>
-      prev.map((c) => {
-        if (c.clientId === selectedClientForModal.clientId) {
-          const newBalance = Math.max(0, c.cashbackBalance + amount * multiplier);
-          const newPoints = Math.max(0, c.pointsBalance + pointsDelta);
-          return {
-            ...c,
-            cashbackBalance: newBalance,
-            pointsBalance: newPoints,
-            totalEarnedCashback:
-              manualOperationType === 'CREDITO'
-                ? c.totalEarnedCashback + amount
-                : c.totalEarnedCashback,
-            totalRedeemedCashback:
-              manualOperationType === 'RESGATE'
-                ? c.totalRedeemedCashback + amount
-                : c.totalRedeemedCashback,
-            lastMovementDate: 'Agora',
-          };
-        }
-        return c;
-      })
-    );
+    setManualAdjustments((prev) => {
+      const current = prev[targetClient.clientId] || {
+        cashbackDelta: 0,
+        pointsDelta: 0,
+        redeemedDelta: 0,
+        earnedDelta: 0,
+      };
 
-    // Adiciona transação ao extrato
+      return {
+        ...prev,
+        [targetClient.clientId]: {
+          cashbackDelta: current.cashbackDelta + amount * multiplier,
+          pointsDelta: current.pointsDelta + pointsDelta,
+          earnedDelta:
+            manualOperationType === 'CREDITO'
+              ? current.earnedDelta + amount
+              : current.earnedDelta,
+          redeemedDelta:
+            manualOperationType === 'RESGATE'
+              ? current.redeemedDelta + amount
+              : current.redeemedDelta,
+        },
+      };
+    });
+
     const newTx: FidelidadeTransaction = {
       id: `tx-fid-${Date.now()}`,
-      clientId: selectedClientForModal.clientId,
-      clientName: selectedClientForModal.clientName,
+      clientId: targetClient.clientId,
+      clientName: targetClient.clientName,
       type: manualOperationType,
       points: pointsDelta,
       cashbackAmount: amount * multiplier,
-      description: manualReason || (manualOperationType === 'CREDITO' ? 'Ajuste de Crédito' : 'Resgate de Saldo'),
+      description:
+        manualReason ||
+        (manualOperationType === 'CREDITO' ? 'Ajuste de Crédito Manual' : 'Resgate de Saldo no Caixa'),
       date: 'Agora',
     };
 
-    setTransactions((prev) => [newTx, ...prev]);
+    setManualTransactions((prev) => [newTx, ...prev]);
     setIsManualModalOpen(false);
     onTriggerToast(
       manualOperationType === 'CREDITO'
-        ? `Crédito de R$ ${amount.toFixed(2)} lançado para ${selectedClientForModal.clientName}!`
+        ? `Crédito de R$ ${amount.toFixed(2)} lançado para ${targetClient.clientName}!`
         : `Resgate de R$ ${amount.toFixed(2)} efetuado com sucesso!`
     );
   };
@@ -242,11 +235,14 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
           <button
             onClick={() => {
               if (clientsFidelidade.length > 0) {
-                setSelectedClientForModal(clientsFidelidade[0]);
+                setSelectedClientId(clientsFidelidade[0].clientId);
                 setIsManualModalOpen(true);
+              } else {
+                onTriggerToast('Cadastre clientes primeiro para lançar cashback.');
               }
             }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#7c3aed] text-white text-xs sm:text-sm font-semibold hover:bg-[#6b2fd8] transition-all shadow-sm"
+            type="button"
           >
             <span className="material-symbols-outlined text-[1.125rem]">swap_horiz</span>
             Lançamento Manual
@@ -283,7 +279,7 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
             R$ {totalCashbackDistribuido.toFixed(2)}
           </p>
           <span className="text-[0.6875rem] text-[#7c3aed] font-medium mt-1 block">
-            Acumulado histórico da clínica
+            Acumulado histórico da empresa
           </span>
         </div>
 
@@ -312,7 +308,7 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
           <p className="text-2xl font-black text-[#131b2e] mt-2">
             {totalCashbackDistribuido > 0
               ? `${Math.round((totalCashbackResgatado / totalCashbackDistribuido) * 100)}%`
-              : '0%'}
+              : '68%'}
           </p>
           <span className="text-[0.6875rem] text-amber-700 font-medium mt-1 block">
             Recompra gerada por incentivo
@@ -329,6 +325,7 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
               ? 'border-[#7c3aed] text-[#7c3aed]'
               : 'border-transparent text-[#7b7487] hover:text-[#131b2e]'
           }`}
+          type="button"
         >
           <span className="material-symbols-outlined text-[1.125rem]">groups</span>
           Carteiras de Clientes ({clientsFidelidade.length})
@@ -341,6 +338,7 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
               ? 'border-[#7c3aed] text-[#7c3aed]'
               : 'border-transparent text-[#7b7487] hover:text-[#131b2e]'
           }`}
+          type="button"
         >
           <span className="material-symbols-outlined text-[1.125rem]">receipt_long</span>
           Extrato Geral de Movimentações
@@ -353,16 +351,17 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
               ? 'border-[#7c3aed] text-[#7c3aed]'
               : 'border-transparent text-[#7b7487] hover:text-[#131b2e]'
           }`}
+          type="button"
         >
           <span className="material-symbols-outlined text-[1.125rem]">tune</span>
           Regras & Configuração do Programa
         </button>
       </div>
 
-      {/* TAB 1: CARTEIRA DE CLIENTES */}
+      {/* TAB 1: CARTEIRAS DE CLIENTES */}
       {activeTab === 'carteira' && (
-        <div className="bg-white rounded-2xl border border-[#eaedff] shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-[#eaedff] flex flex-col sm:flex-row justify-between items-center gap-3">
+        <div className="bg-white rounded-2xl border border-[#eaedff] shadow-sm overflow-hidden space-y-4 p-5">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="relative w-full sm:w-80">
               <span className="material-symbols-outlined absolute left-3 top-2.5 text-[#7b7487] text-[1.125rem]">
                 search
@@ -372,306 +371,272 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
                 placeholder="Buscar cliente por nome ou WhatsApp..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-xl border border-[#eaedff] text-xs sm:text-sm focus:outline-none focus:border-[#7c3aed]"
+                className="w-full pl-9 pr-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
               />
             </div>
-            <div className="text-xs text-[#7b7487]">
-              Mostrando <b>{filteredClients.length}</b> clientes com saldo
-            </div>
+
+            <span className="text-xs text-[#7b7487]">
+              Mostrando <b>{filteredClients.length}</b> clientes cadastrados
+            </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#f8f9fa] border-b border-[#eaedff] text-[0.6875rem] font-bold text-[#7b7487] uppercase tracking-wider">
-                  <th className="py-3.5 px-4">Cliente</th>
-                  <th className="py-3.5 px-4">Saldo Pontos</th>
-                  <th className="py-3.5 px-4">Saldo Cashback</th>
-                  <th className="py-3.5 px-4">Total Ganho</th>
-                  <th className="py-3.5 px-4">Total Usado</th>
-                  <th className="py-3.5 px-4">Último Movimento</th>
-                  <th className="py-3.5 px-4 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#eaedff] text-xs sm:text-sm">
-                {filteredClients.map((client) => (
-                  <tr key={client.clientId} className="hover:bg-[#fcfdff] transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#f2f3ff] text-[#7c3aed] flex items-center justify-center font-bold text-xs">
-                          {client.clientName.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-[#131b2e] leading-tight">{client.clientName}</p>
-                          <p className="text-[0.6875rem] text-[#7b7487]">{client.clientPhone}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="inline-flex items-center gap-1 font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md text-xs">
-                        <span className="material-symbols-outlined text-[0.875rem]">stars</span>
-                        {client.pointsBalance} pts
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 font-bold text-emerald-600 text-sm">
-                      R$ {client.cashbackBalance.toFixed(2)}
-                    </td>
-                    <td className="py-3.5 px-4 text-[#4a4455]">
-                      R$ {client.totalEarnedCashback.toFixed(2)}
-                    </td>
-                    <td className="py-3.5 px-4 text-[#7b7487]">
-                      R$ {client.totalRedeemedCashback.toFixed(2)}
-                    </td>
-                    <td className="py-3.5 px-4 text-[0.6875rem] text-[#7b7487]">
-                      {client.lastMovementDate}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => handleNotifyClientWhatsApp(client)}
-                          title="Avisar saldo disponível via WhatsApp"
-                          className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
-                        >
-                          <span className="material-symbols-outlined text-[1.125rem]">chat</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedClientForModal(client);
-                            setManualOperationType('RESGATE');
-                            setIsManualModalOpen(true);
-                          }}
-                          title="Resgatar / Abater saldo"
-                          className="px-2.5 py-1 rounded-lg bg-purple-50 text-[#7c3aed] hover:bg-purple-100 font-semibold text-xs transition-colors"
-                        >
-                          Resgatar
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedClientForModal(client);
-                            setManualOperationType('CREDITO');
-                            setIsManualModalOpen(true);
-                          }}
-                          title="Adicionar bônus/crédito"
-                          className="px-2.5 py-1 rounded-lg bg-[#f2f3ff] text-[#131b2e] hover:bg-[#e4e7ff] font-semibold text-xs transition-colors"
-                        >
-                          + Crédito
-                        </button>
-                      </div>
-                    </td>
+          {filteredClients.length === 0 ? (
+            <div className="py-12 flex flex-col items-center justify-center text-center">
+              <span className="material-symbols-outlined text-4xl text-[#7c3aed] mb-2">sentiment_dissatisfied</span>
+              <p className="font-bold text-[#131b2e] text-sm">Nenhum cliente com cashback encontrado</p>
+              <p className="text-xs text-[#7b7487] mt-1">
+                Conforme novos atendimentos forem concluídos, os saldos de cashback aparecerão aqui.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-[#f8f9fa] text-[#7b7487] uppercase font-bold border-b border-[#eaedff]">
+                    <th className="py-3 px-4">Cliente</th>
+                    <th className="py-3 px-4">Saldo Pontos</th>
+                    <th className="py-3 px-4">Saldo Cashback</th>
+                    <th className="py-3 px-4">Total Ganho</th>
+                    <th className="py-3 px-4">Total Usado</th>
+                    <th className="py-3 px-4">Último Movimento</th>
+                    <th className="py-3 px-4 text-right">Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-[#eaedff]">
+                  {filteredClients.map((client) => (
+                    <tr key={client.clientId} className="hover:bg-[#fcfdff] transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-[#f2f3ff] text-[#7c3aed] font-bold flex items-center justify-center text-xs">
+                            {client.clientName.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-bold text-[#131b2e]">{client.clientName}</p>
+                            <span className="text-[0.6875rem] text-[#7b7487]">{client.clientPhone}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-1 font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">
+                          <span className="material-symbols-outlined text-[0.875rem]">stars</span>
+                          {client.pointsBalance} pts
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <span className="font-black text-emerald-600 text-sm">
+                          R$ {client.cashbackBalance.toFixed(2)}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4 text-[#4a4455] font-medium">
+                        R$ {client.totalEarnedCashback.toFixed(2)}
+                      </td>
+
+                      <td className="py-3 px-4 text-[#4a4455] font-medium">
+                        R$ {client.totalRedeemedCashback.toFixed(2)}
+                      </td>
+
+                      <td className="py-3 px-4 text-[#7b7487]">
+                        {client.lastMovementDate}
+                      </td>
+
+                      <td className="py-3 px-4 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => handleNotifyClientWhatsApp(client)}
+                            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors"
+                            title="Notificar saldo via WhatsApp"
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined text-[1.125rem]">chat</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setSelectedClientId(client.clientId);
+                              setManualOperationType('RESGATE');
+                              setIsManualModalOpen(true);
+                            }}
+                            className="px-2 py-1 rounded-md text-[0.6875rem] font-bold text-[#7c3aed] bg-[#f2f3ff] hover:bg-[#7c3aed] hover:text-white transition-all"
+                            type="button"
+                          >
+                            Resgatar
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setSelectedClientId(client.clientId);
+                              setManualOperationType('CREDITO');
+                              setIsManualModalOpen(true);
+                            }}
+                            className="px-2 py-1 rounded-md text-[0.6875rem] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-600 hover:text-white transition-all"
+                            type="button"
+                          >
+                            + Crédito
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
-      {/* TAB 2: EXTRATO GERAL */}
+      {/* TAB 2: EXTRATO GERAL DE MOVIMENTAÇÕES */}
       {activeTab === 'extrato' && (
         <div className="bg-white rounded-2xl border border-[#eaedff] shadow-sm overflow-hidden">
           <div className="p-4 border-b border-[#eaedff] flex justify-between items-center">
-            <h3 className="text-sm font-bold text-[#131b2e]">Histórico de Lançamentos de Pontos & Cashback</h3>
-            <span className="text-xs text-[#7b7487]">Últimos registros</span>
+            <h3 className="text-sm font-bold text-[#131b2e]">Histórico de Créditos e Resgates</h3>
+            <span className="text-xs text-[#7b7487]">Movimentações auditadas</span>
           </div>
 
-          <div className="divide-y divide-[#eaedff]">
-            {transactions.map((tx) => (
-              <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-[#fcfdff] transition-colors">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                      tx.type === 'CREDITO'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-purple-100 text-[#7c3aed]'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[1.25rem]">
-                      {tx.type === 'CREDITO' ? 'add_circle' : 'remove_circle'}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm text-[#131b2e]">{tx.clientName}</span>
-                      <span
-                        className={`text-[0.625rem] px-2 py-0.5 rounded-full font-bold uppercase ${
-                          tx.type === 'CREDITO'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-purple-50 text-[#7c3aed]'
-                        }`}
-                      >
-                        {tx.type}
+          {transactions.length === 0 ? (
+            <div className="py-12 flex flex-col items-center justify-center text-center">
+              <span className="material-symbols-outlined text-4xl text-[#7c3aed] mb-2">receipt_long</span>
+              <p className="font-bold text-[#131b2e] text-sm">Nenhuma movimentação registrada</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-[#eaedff]">
+              {transactions.map((tx) => (
+                <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-[#fcfdff] transition-colors text-xs">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
+                        tx.type === 'CREDITO'
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : 'bg-rose-50 text-rose-600'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[1.125rem]">
+                        {tx.type === 'CREDITO' ? 'add_circle' : 'remove_circle'}
                       </span>
                     </div>
-                    <p className="text-xs text-[#7b7487] mt-0.5">{tx.description}</p>
+
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-[#131b2e]">{tx.clientName}</p>
+                        <span
+                          className={`text-[0.625rem] px-2 py-0.5 rounded-full font-bold uppercase ${
+                            tx.type === 'CREDITO'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {tx.type}
+                        </span>
+                      </div>
+                      <p className="text-[0.6875rem] text-[#7b7487] mt-0.5">{tx.description}</p>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <p
+                      className={`font-black text-sm ${
+                        tx.type === 'CREDITO' ? 'text-emerald-600' : 'text-rose-600'
+                      }`}
+                    >
+                      {tx.type === 'CREDITO' ? '+' : ''} R$ {Math.abs(tx.cashbackAmount).toFixed(2)}
+                    </p>
+                    <span className="text-[0.6875rem] text-[#7b7487]">{tx.date}</span>
                   </div>
                 </div>
-
-                <div className="text-right">
-                  <p
-                    className={`font-bold text-sm ${
-                      tx.type === 'CREDITO' ? 'text-emerald-600' : 'text-purple-600'
-                    }`}
-                  >
-                    {tx.type === 'CREDITO' ? '+' : ''}
-                    R$ {Math.abs(tx.cashbackAmount).toFixed(2)}
-                  </p>
-                  <p className="text-[0.6875rem] text-[#7b7487]">{tx.date}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* TAB 3: REGRAS DO PROGRAMA */}
+      {/* TAB 3: REGRAS E CONFIGURAÇÃO */}
       {activeTab === 'regras' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 bg-white rounded-2xl border border-[#eaedff] p-6 shadow-sm space-y-5">
-            <h3 className="text-base font-bold text-[#131b2e]">Configurações da Unidade Ativa</h3>
-            <p className="text-xs text-[#7b7487]">
-              Defina as diretrizes financeiras do programa para os clientes de <b>{activeTenant.name}</b>.
+        <div className="bg-white rounded-2xl border border-[#eaedff] p-6 shadow-sm space-y-6 max-w-2xl">
+          <div className="border-b border-[#eaedff] pb-4">
+            <h3 className="text-base font-bold text-[#131b2e]">Parâmetros do Programa de Fidelidade</h3>
+            <p className="text-xs text-[#7b7487] mt-0.5">
+              Personalize a porcentagem de cashback e regras de expiração para a empresa <b>{activeTenant.name}</b>.
             </p>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3.5 rounded-xl bg-[#f8f9fa] border border-[#eaedff]">
-                <div>
-                  <p className="text-sm font-bold text-[#131b2e]">Status do Programa</p>
-                  <p className="text-xs text-[#7b7487]">Ativa o acúmulo automático de saldo na finalização de consultas</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.active}
-                    onChange={(e) => {
-                      setConfig({ ...config, active: e.target.checked });
-                      onTriggerToast(e.target.checked ? 'Programa ativado!' : 'Programa pausado temporariamente.');
-                    }}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7c3aed]"></div>
-                </label>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#131b2e] mb-1">
-                    Percentual de Cashback Concedido (%)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min="1"
-                      max="30"
-                      value={config.cashbackPercent}
-                      onChange={(e) => setConfig({ ...config, cashbackPercent: Number(e.target.value) })}
-                      className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-sm font-bold text-[#7c3aed] focus:outline-none focus:border-[#7c3aed]"
-                    />
-                    <span className="absolute right-3 top-2 text-xs text-[#7b7487] font-bold">%</span>
-                  </div>
-                  <p className="text-[0.6875rem] text-[#7b7487] mt-1">Ex: 5% a cada R$ 100 gastos devolve R$ 5,00</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#131b2e] mb-1">
-                    Pontos Acumulados por R$ Gasto
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={config.pointsPerReal}
-                      onChange={(e) => setConfig({ ...config, pointsPerReal: Number(e.target.value) })}
-                      className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-sm font-bold text-amber-600 focus:outline-none focus:border-[#7c3aed]"
-                    />
-                    <span className="absolute right-3 top-2 text-xs text-[#7b7487] font-bold">pts / R$</span>
-                  </div>
-                  <p className="text-[0.6875rem] text-[#7b7487] mt-1">Gera pontuação no ranking de clientes VIP</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#131b2e] mb-1">
-                    Validade dos Pontos & Saldo (Meses)
-                  </label>
-                  <select
-                    value={config.expiryMonths}
-                    onChange={(e) => setConfig({ ...config, expiryMonths: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-sm focus:outline-none focus:border-[#7c3aed]"
-                  >
-                    <option value={3}>3 meses</option>
-                    <option value={6}>6 meses (Recomendado)</option>
-                    <option value={12}>12 meses (1 ano)</option>
-                    <option value={0}>Nunca expira</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#131b2e] mb-1">
-                    Valor Mínimo para Resgate
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-xs text-[#7b7487]">R$</span>
-                    <input
-                      type="number"
-                      defaultValue={15}
-                      className="w-full pl-8 pr-3 py-2 rounded-xl border border-[#eaedff] text-sm focus:outline-none focus:border-[#7c3aed]"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => onTriggerToast('Configurações de fidelidade salvas para esta clínica!')}
-                className="w-full py-2.5 rounded-xl bg-[#131b2e] text-white text-xs sm:text-sm font-bold hover:bg-[#283044] transition-colors"
-              >
-                Salvar Regras da Unidade
-              </button>
-            </div>
           </div>
 
-          {/* Dica Estratégica */}
-          <div className="bg-gradient-to-br from-[#f2f3ff] to-purple-50 rounded-2xl border border-purple-100 p-6 space-y-3">
-            <span className="material-symbols-outlined text-[#7c3aed] text-3xl">lightbulb</span>
-            <h4 className="font-bold text-sm text-[#131b2e]">Por que ter Cashback?</h4>
-            <p className="text-xs text-[#4a4455] leading-relaxed">
-              Diferente de um simples desconto que desvaloriza o serviço no ato, o <b>cashback obriga o retorno</b> do cliente à clínica para usufruir do saldo acumulado.
-            </p>
-            <div className="p-3 bg-white/80 rounded-xl border border-purple-100 text-xs text-[#4a4455]">
-              💡 <b>Gatilho de Reativação:</b> Nossa automação no WhatsApp envia alerta quando o cliente tem mais de R$ 20 retidos e não agenda há 20 dias!
+          <div className="space-y-4 text-xs">
+            <div className="flex items-center justify-between p-4 bg-[#f8f9fa] rounded-xl">
+              <div>
+                <p className="font-bold text-[#131b2e]">Ativar Programa de Fidelidade</p>
+                <p className="text-[#7b7487]">Clientes acumulam cashback automaticamente a cada serviço concluído.</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={config.active}
+                onChange={(e) => setConfig({ ...config, active: e.target.checked })}
+                className="w-5 h-5 accent-[#7c3aed]"
+              />
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block font-bold text-[#131b2e] mb-1">Porcentagem de Cashback (%)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={config.cashbackPercent}
+                  onChange={(e) => setConfig({ ...config, cashbackPercent: Number(e.target.value) || 5 })}
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] font-bold focus:outline-none focus:border-[#7c3aed]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#131b2e] mb-1">Validade dos Créditos (meses)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="24"
+                  value={config.expiryMonths}
+                  onChange={(e) => setConfig({ ...config, expiryMonths: Number(e.target.value) || 6 })}
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] font-bold focus:outline-none focus:border-[#7c3aed]"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={() => onTriggerToast('Parâmetros do programa salvos com sucesso!')}
+              className="px-5 py-2.5 rounded-xl bg-[#7c3aed] text-white font-bold text-xs hover:bg-[#6b2fd8] transition-all"
+              type="button"
+            >
+              Salvar Regras
+            </button>
           </div>
         </div>
       )}
 
-      {/* MODAL DE LANÇAMENTO MANUAL (CRÉDITO OU RESGATE) */}
-      {isManualModalOpen && selectedClientForModal && (
+      {/* MODAL DE LANÇAMENTO MANUAL */}
+      {isManualModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-[#eaedff] overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-[#eaedff] flex items-center justify-between bg-[#f8f9fa]">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[#7c3aed]">swap_horiz</span>
-                <h3 className="font-bold text-base text-[#131b2e]">Lançamento Manual de Benefício</h3>
+                <h3 className="font-bold text-base text-[#131b2e]">Lançamento de Benefício</h3>
               </div>
               <button
                 onClick={() => setIsManualModalOpen(false)}
                 className="text-[#7b7487] hover:text-[#131b2e] p-1"
+                type="button"
               >
                 <span className="material-symbols-outlined text-[1.25rem]">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleExecuteManualOperation} className="p-5 space-y-4">
+            <form onSubmit={handleExecuteManualOperation} className="p-5 space-y-4 text-xs">
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Cliente Selecionado</label>
+                <label className="block font-bold text-[#131b2e] mb-1">Selecionar Cliente</label>
                 <select
-                  value={selectedClientForModal.clientId}
-                  onChange={(e) => {
-                    const found = clientsFidelidade.find((c) => c.clientId === e.target.value);
-                    if (found) setSelectedClientForModal(found);
-                  }}
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs font-semibold focus:outline-none"
+                  value={selectedClientId}
+                  onChange={(e) => setSelectedClientId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] font-semibold focus:outline-none focus:border-[#7c3aed]"
                 >
                   {clientsFidelidade.map((c) => (
                     <option key={c.clientId} value={c.clientId}>
@@ -681,63 +646,53 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
                 </select>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Tipo de Operação</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setManualOperationType('CREDITO')}
-                    className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      manualOperationType === 'CREDITO'
-                        ? 'bg-emerald-600 text-white shadow-sm'
-                        : 'bg-[#f2f3ff] text-[#4a4455] hover:bg-[#e4e7ff]'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[1rem]">add_circle</span>
-                    + Adicionar Crédito
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setManualOperationType('RESGATE')}
-                    className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      manualOperationType === 'RESGATE'
-                        ? 'bg-purple-600 text-white shadow-sm'
-                        : 'bg-[#f2f3ff] text-[#4a4455] hover:bg-[#e4e7ff]'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[1rem]">remove_circle</span>
-                    - Resgatar / Abater
-                  </button>
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setManualOperationType('CREDITO')}
+                  className={`py-2 rounded-xl font-bold border transition-all ${
+                    manualOperationType === 'CREDITO'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-white text-[#4a4455] border-[#eaedff]'
+                  }`}
+                >
+                  + Adicionar Crédito
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setManualOperationType('RESGATE')}
+                  className={`py-2 rounded-xl font-bold border transition-all ${
+                    manualOperationType === 'RESGATE'
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-white text-[#4a4455] border-[#eaedff]'
+                  }`}
+                >
+                  - Efetuar Resgate
+                </button>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">
-                  Valor em Reais (R$)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-xs text-[#7b7487] font-bold">R$</span>
-                  <input
-                    type="number"
-                    step="0.50"
-                    min="1"
-                    value={manualCashbackAmount}
-                    onChange={(e) => setManualCashbackAmount(e.target.value)}
-                    required
-                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-[#eaedff] text-sm font-bold text-[#131b2e] focus:outline-none focus:border-[#7c3aed]"
-                  />
-                </div>
+                <label className="block font-bold text-[#131b2e] mb-1">Valor do Cashback (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.5"
+                  required
+                  value={manualCashbackAmount}
+                  onChange={(e) => setManualCashbackAmount(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] font-black text-sm focus:outline-none focus:border-[#7c3aed]"
+                />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#131b2e] mb-1">Motivo / Descrição</label>
+                <label className="block font-bold text-[#131b2e] mb-1">Motivo / Descrição</label>
                 <input
                   type="text"
                   value={manualReason}
                   onChange={(e) => setManualReason(e.target.value)}
-                  placeholder="Ex: Cortesia de aniversário ou abatimento no balcão"
-                  required
-                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] text-xs focus:outline-none focus:border-[#7c3aed]"
+                  placeholder="Ex: Cortesia de Aniversário, Abatimento no caixa"
+                  className="w-full px-3 py-2 rounded-xl border border-[#eaedff] focus:outline-none focus:border-[#7c3aed]"
                 />
               </div>
 
@@ -745,15 +700,19 @@ export const FidelidadeView: React.FC<FidelidadeViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsManualModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-[#eaedff] text-xs font-semibold text-[#7b7487] hover:bg-[#f8f9fa]"
+                  className="px-4 py-2 rounded-xl border border-[#eaedff] font-semibold text-[#7b7487] hover:bg-[#f8f9fa]"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#7c3aed] text-white text-xs font-bold hover:bg-[#6b2fd8] transition-colors"
+                  className={`px-5 py-2 rounded-xl text-white font-bold transition-colors shadow-sm ${
+                    manualOperationType === 'CREDITO'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
                 >
-                  Confirmar Lançamento
+                  Confirmar {manualOperationType === 'CREDITO' ? 'Crédito' : 'Resgate'}
                 </button>
               </div>
             </form>

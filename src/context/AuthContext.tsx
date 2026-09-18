@@ -3,6 +3,7 @@ import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Database } from '../types/database.types';
 import { INITIAL_TENANTS } from './TenantContext';
+import { provisionNewCompanyTenant } from '../services/tenantService';
 
 export type TenantRow = Database['public']['Tables']['tenants']['Row'];
 
@@ -108,91 +109,120 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Process tenant_members
       let formattedMemberships: TenantMembership[] = [];
       if (!membershipsRes.error && membershipsRes.data && membershipsRes.data.length > 0) {
-        formattedMemberships = (membershipsRes.data as any[]).map((row) => ({
-          id: row.id,
-          tenant_id: row.tenant_id,
-          user_id: row.user_id,
-          role: row.role,
-          created_at: row.created_at,
-          tenants: row.tenants as TenantRow | null,
-        }));
+        formattedMemberships = (membershipsRes.data as any[])
+          .filter((row) => row.tenants) // must have joined tenant
+          .map((row) => ({
+            id: row.id,
+            tenant_id: row.tenant_id,
+            user_id: row.user_id,
+            role: row.role,
+            created_at: row.created_at,
+            tenants: row.tenants as TenantRow | null,
+          }));
       }
 
-      // Fallback: If no DB tenant_members row yet, check if email matches seed tenant owner OR new registered empresa
-      if (formattedMemberships.length === 0 && emailToCheck) {
-        const matchingTenant = INITIAL_TENANTS.find(
-          (t) => t.ownerEmail.toLowerCase() === emailToCheck?.toLowerCase()
-        );
-        if (matchingTenant) {
+      // If no membership found yet, check if there is an existing tenant where owner_email = emailToCheck or create/fallback
+      if (formattedMemberships.length === 0) {
+        let matchedTenant: TenantRow | null = null;
+
+        if (emailToCheck) {
+          try {
+            const { data: ownedTenants } = await supabase
+              .from('tenants')
+              .select('*')
+              .eq('owner_email', emailToCheck)
+              .limit(1);
+
+            if (ownedTenants && ownedTenants.length > 0) {
+              matchedTenant = ownedTenants[0] as TenantRow;
+            }
+          } catch (tErr) {
+            console.warn('Aviso ao buscar tenants por email:', tErr);
+          }
+        }
+
+        if (matchedTenant) {
+          try {
+            // Attempt to create membership link in DB
+            await supabase.from('tenant_members').insert({
+              tenant_id: matchedTenant.id,
+              user_id: currentUserId,
+              role: 'owner',
+            });
+          } catch (mErr) {
+            // ignore RLS warnings
+          }
+
           formattedMemberships = [
             {
-              id: `membership-${matchingTenant.id}`,
-              tenant_id: matchingTenant.id,
+              id: `membership-${matchedTenant.id}`,
+              tenant_id: matchedTenant.id,
               user_id: currentUserId,
               role: 'owner',
               created_at: new Date().toISOString(),
-              tenants: {
-                id: matchingTenant.id,
-                name: matchingTenant.name,
-                slug: matchingTenant.slug,
-                segment: matchingTenant.type,
-                status: matchingTenant.status,
-                plan: matchingTenant.plan,
-                monthly_fee: matchingTenant.monthlyFee,
-                owner_name: matchingTenant.ownerName,
-                owner_email: matchingTenant.ownerEmail,
-                owner_phone: matchingTenant.ownerPhone,
-                address: matchingTenant.address,
-                logo_url: matchingTenant.logo,
-                settings: matchingTenant.settings as any,
-                created_at: matchingTenant.createdAt,
-                updated_at: matchingTenant.createdAt,
-              } as any,
+              tenants: matchedTenant,
             },
           ];
         } else {
           // Check user metadata for dynamically registered empresa
-          const { data: userRes } = await supabase.auth.getUser();
-          const userMeta = userRes?.user?.user_metadata || {};
+          let userMeta: any = {};
+          try {
+            const { data: userRes } = await supabase.auth.getUser();
+            userMeta = userRes?.user?.user_metadata || {};
+          } catch (uErr) {
+            console.warn('Aviso ao obter user_metadata:', uErr);
+          }
+
           const isClientOnly = userMeta.account_type === 'cliente';
 
-          if (!isClientOnly && userRes?.user) {
-            const tenantId = `tenant-${currentUserId.substring(0, 8)}`;
-            const bName = userMeta.business_name || `${userMeta.full_name || 'Minha Empresa'}`;
-            const bSegment = userMeta.business_segment || 'barbearia';
+          // If not explicitly a client, treat as empresa owner
+          if (!isClientOnly) {
+            const emailPrefix = emailToCheck ? emailToCheck.split('@')[0] : 'Empresa';
+            const cleanPrefix = emailPrefix.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+            const bName = userMeta.business_name || (cleanPrefix.toLowerCase().includes('barbearia') ? cleanPrefix : `${cleanPrefix}`);
+            const bSegment = userMeta.business_segment || 
+              (emailToCheck?.toLowerCase().includes('barber') || emailToCheck?.toLowerCase().includes('barbearia') ? 'barbearia' : 'clinica');
+            const ownerName = userMeta.full_name || cleanPrefix;
 
-            formattedMemberships = [
-              {
-                id: `membership-${tenantId}`,
-                tenant_id: tenantId,
-                user_id: currentUserId,
-                role: 'owner',
-                created_at: new Date().toISOString(),
-                tenants: {
-                  id: tenantId,
-                  name: bName,
-                  slug: bName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-                  segment: bSegment,
-                  status: 'ativo',
-                  plan: 'Pro',
-                  monthly_fee: 197.0,
-                  owner_name: userMeta.full_name || emailToCheck.split('@')[0],
-                  owner_email: emailToCheck,
-                  owner_phone: userMeta.phone || '',
-                  address: 'Endereço Comercial',
-                  logo_url: null,
-                  settings: {
-                    primary_color: '#7c3aed',
-                    allow_signal_booking: true,
-                    signal_amount: 30.0,
-                    reminder_hours_before: [24, 2],
-                    segment: bSegment,
-                  } as any,
+            try {
+              const createdTenant = await provisionNewCompanyTenant({
+                userId: currentUserId,
+                businessName: bName,
+                segment: bSegment,
+                ownerName: ownerName,
+                ownerEmail: emailToCheck || `${currentUserId.substring(0, 8)}@empresa.com`,
+                ownerPhone: userMeta.phone || '',
+              });
+
+              formattedMemberships = [
+                {
+                  id: `membership-${createdTenant.id}`,
+                  tenant_id: createdTenant.id,
+                  user_id: currentUserId,
+                  role: 'owner',
                   created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                } as any,
-              },
-            ];
+                  tenants: {
+                    id: createdTenant.id,
+                    name: createdTenant.name,
+                    slug: createdTenant.slug,
+                    segment: createdTenant.type,
+                    status: createdTenant.status,
+                    plan: createdTenant.plan,
+                    monthly_fee: createdTenant.monthlyFee,
+                    owner_name: createdTenant.ownerName,
+                    owner_email: createdTenant.ownerEmail,
+                    owner_phone: createdTenant.ownerPhone,
+                    address: createdTenant.address,
+                    logo_url: createdTenant.logo,
+                    settings: createdTenant.settings as any,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  } as any,
+                },
+              ];
+            } catch (pErr) {
+              console.warn('Aviso ao provisionar empresa:', pErr);
+            }
           }
         }
       }
@@ -438,6 +468,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
         } catch (cErr) {
           console.warn('Aviso ao criar registro de cliente:', cErr);
+        }
+      } else {
+        // Empresa account: provision real tenant in DB immediately
+        try {
+          await provisionNewCompanyTenant({
+            userId: newUser.id,
+            businessName: payload.businessName?.trim() || payload.name.trim(),
+            segment: payload.businessSegment || 'barbearia',
+            ownerName: payload.name.trim(),
+            ownerEmail: email,
+            ownerPhone: payload.phone?.trim() || '',
+          });
+        } catch (tErr) {
+          console.warn('Aviso ao provisionar tenant no cadastro:', tErr);
         }
       }
 

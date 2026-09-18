@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
-import { PROFESSIONALS_DATA } from '../data/mockData';
+import React, { useState, useMemo } from 'react';
+import { Appointment, Service, Professional } from '../types';
 import { useTenant } from '../context/TenantContext';
 
 interface FinanceiroViewProps {
+  appointments?: Appointment[];
+  services?: Service[];
+  professionals?: Professional[];
   onTriggerToast: (msg: string) => void;
 }
 
@@ -29,47 +32,85 @@ interface ProfessionalCommission {
   isPaid: boolean;
 }
 
-export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }) => {
+export const FinanceiroView: React.FC<FinanceiroViewProps> = ({
+  appointments = [],
+  services = [],
+  professionals = [],
+  onTriggerToast,
+}) => {
   const { activeTenant } = useTenant();
   const [activeTab, setActiveTab] = useState<'caixa' | 'comissoes'>('caixa');
   const [filterType, setFilterType] = useState<string>('todos');
   const [isNewTxModalOpen, setIsNewTxModalOpen] = useState(false);
 
-  // Transactions State
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    { id: 'tx-1', type: 'receita', clientOrBeneficiary: 'Mariana Silveira', serviceOrCategory: 'Harmonização Facial', professional: 'Dra. Fernanda', method: 'PIX', value: 1800, status: 'Aprovado', time: 'Hoje às 15:00' },
-    { id: 'tx-2', type: 'receita', clientOrBeneficiary: 'Gabriel Santos', serviceOrCategory: 'Peeling Químico', professional: 'Dr. Rafael', method: 'Cartão Crédito', value: 450, status: 'Aprovado', time: 'Hoje às 15:45' },
-    { id: 'tx-3', type: 'despesa', clientOrBeneficiary: 'Dental Cremer S/A', serviceOrCategory: 'Insumos e Agulhas', method: 'PIX', value: 680, status: 'Aprovado', time: 'Hoje às 14:10' },
-    { id: 'tx-4', type: 'receita', clientOrBeneficiary: 'Patrícia Alves', serviceOrCategory: 'Sinal de Reserva (Online)', professional: 'Dra. Camila', method: 'PIX', value: 50, status: 'Pendente', time: 'Hoje às 13:00' },
-    { id: 'tx-5', type: 'receita', clientOrBeneficiary: 'Marcos Oliveira', serviceOrCategory: 'Consulta dermatológica', professional: 'Dr. Rafael', method: 'PIX', value: 350, status: 'Aprovado', time: 'Hoje às 10:00' },
-    { id: 'tx-6', type: 'receita', clientOrBeneficiary: 'Ana Carolina', serviceOrCategory: 'Limpeza de pele profunda', professional: 'Dra. Fernanda', method: 'Cartão Débito', value: 240, status: 'Aprovado', time: 'Hoje às 09:00' },
-    { id: 'tx-7', type: 'despesa', clientOrBeneficiary: 'Enel Energia Elétrica', serviceOrCategory: 'Contas de Consumo', method: 'Transferência', value: 420, status: 'Aprovado', time: 'Ontem' },
-  ]);
+  // Manual additional transactions (expenses/extra revenues)
+  const [manualTransactions, setManualTransactions] = useState<Transaction[]>([]);
 
-  // Commissions State
-  const [commissions, setCommissions] = useState<ProfessionalCommission[]>([
-    { profId: '1', name: 'Dra. Fernanda', role: 'Dermatologista & Esteta', commissionRate: 45, totalProduced: 7840, commissionTotal: 3528, appointmentsCount: 22, isPaid: false },
-    { profId: '2', name: 'Dr. Rafael', role: 'Médico Dermatologista', commissionRate: 50, totalProduced: 5600, commissionTotal: 2800, appointmentsCount: 16, isPaid: false },
-    { profId: '3', name: 'Dra. Camila', role: 'Biomédica Esteta', commissionRate: 40, totalProduced: 3950, commissionTotal: 1580, appointmentsCount: 14, isPaid: true },
-    { profId: '4', name: 'Amanda', role: 'Esteticista Facial', commissionRate: 35, totalProduced: 2200, commissionTotal: 770, appointmentsCount: 11, isPaid: false },
-  ]);
+  // Paid commission tracking
+  const [paidCommissions, setPaidCommissions] = useState<Record<string, boolean>>({});
+
+  // Dynamic transactions generated from real database appointments + manual transactions
+  const allTransactions = useMemo<Transaction[]>(() => {
+    const aptTx: Transaction[] = appointments.map((a) => {
+      const isApproved = a.status === 'CONCLUÍDO' || a.status === 'CONFIRMADO';
+      const isCancelled = a.status === 'CANCELADO';
+      return {
+        id: `tx-apt-${a.id}`,
+        type: 'receita',
+        clientOrBeneficiary: a.clientName || 'Cliente',
+        serviceOrCategory: a.service || 'Atendimento',
+        professional: a.professional,
+        method: 'PIX',
+        value: Number(a.price) || 0,
+        status: isCancelled ? 'Cancelado' : isApproved ? 'Aprovado' : 'Pendente',
+        time: a.date ? `${a.date} às ${a.time || '10:00'}` : 'Hoje',
+      };
+    });
+
+    return [...manualTransactions, ...aptTx];
+  }, [appointments, manualTransactions]);
+
+  // Dynamic commissions calculated per professional from real database appointments
+  const commissions = useMemo<ProfessionalCommission[]>(() => {
+    return professionals.map((p) => {
+      const profApts = appointments.filter(
+        (a) =>
+          (a.professional && p.name && a.professional.toLowerCase().includes(p.name.toLowerCase())) ||
+          (p.name && a.professional && p.name.toLowerCase().includes(a.professional.toLowerCase()))
+      );
+      const validApts = profApts.filter((a) => a.status !== 'CANCELADO');
+      const totalProduced = validApts.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+      const commissionRate = (p as any).commissionRate || (activeTenant.type === 'barbearia' ? 50 : 40);
+      const commissionTotal = (totalProduced * commissionRate) / 100;
+      return {
+        profId: p.id,
+        name: p.name,
+        role: p.role || 'Especialista',
+        commissionRate,
+        totalProduced,
+        commissionTotal,
+        appointmentsCount: validApts.length,
+        isPaid: !!paidCommissions[p.id],
+      };
+    });
+  }, [professionals, appointments, activeTenant.type, paidCommissions]);
 
   // Form State for new transaction
   const [newTx, setNewTx] = useState({
     type: 'receita' as 'receita' | 'despesa',
     clientOrBeneficiary: '',
     serviceOrCategory: '',
-    professional: 'Dra. Fernanda',
+    professional: professionals[0]?.name || 'Geral',
     method: 'PIX' as Transaction['method'],
     value: '',
   });
 
-  // KPI Calculations
-  const totalReceitas = transactions
-    .filter((t) => t.type === 'receita' && t.status === 'Aprovado')
+  // KPI Calculations from real database entries
+  const totalReceitas = allTransactions
+    .filter((t) => t.type === 'receita' && (t.status === 'Aprovado' || t.status === 'Pendente'))
     .reduce((acc, curr) => acc + curr.value, 0);
 
-  const totalDespesas = transactions
+  const totalDespesas = allTransactions
     .filter((t) => t.type === 'despesa' && t.status === 'Aprovado')
     .reduce((acc, curr) => acc + curr.value, 0);
 
@@ -95,30 +136,28 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
       method: newTx.method,
       value: parseFloat(newTx.value),
       status: 'Aprovado',
-      time: 'Agora mesmo',
+      time: 'Hoje',
     };
 
-    setTransactions((prev) => [createdTx, ...prev]);
+    setManualTransactions((prev) => [createdTx, ...prev]);
     setIsNewTxModalOpen(false);
     onTriggerToast(`Lançamento de ${newTx.type === 'receita' ? 'Receita' : 'Despesa'} registrado com sucesso!`);
     setNewTx({
       type: 'receita',
       clientOrBeneficiary: '',
       serviceOrCategory: '',
-      professional: 'Dra. Fernanda',
+      professional: professionals[0]?.name || 'Geral',
       method: 'PIX',
       value: '',
     });
   };
 
   const handlePayCommission = (profId: string, profName: string) => {
-    setCommissions((prev) =>
-      prev.map((c) => (c.profId === profId ? { ...c, isPaid: true } : c))
-    );
+    setPaidCommissions((prev) => ({ ...prev, [profId]: true }));
     onTriggerToast(`Repasse de comissão de ${profName} dado como PAGO!`);
   };
 
-  const filteredTransactions = transactions.filter((t) => {
+  const filteredTransactions = allTransactions.filter((t) => {
     if (filterType === 'receitas') return t.type === 'receita';
     if (filterType === 'despesas') return t.type === 'despesa';
     if (filterType === 'pix') return t.method === 'PIX';
@@ -293,56 +332,77 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#eaedff] text-xs sm:text-sm">
-                {filteredTransactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-[#f2f3ff]/40 transition-colors">
-                    <td className="py-3 px-3">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6875rem] font-bold ${
-                          tx.type === 'receita'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-[0.875rem]">
-                          {tx.type === 'receita' ? 'arrow_downward' : 'arrow_upward'}
-                        </span>
-                        {tx.type === 'receita' ? 'Entrada' : 'Saída'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 font-semibold text-[#131b2e]">
-                      {tx.clientOrBeneficiary}
-                    </td>
-                    <td className="py-3 px-3 text-xs text-[#4a4455]">{tx.serviceOrCategory}</td>
-                    <td className="py-3 px-3 text-xs text-[#630ed4] font-medium">
-                      {tx.professional || 'Geral'}
-                    </td>
-                    <td className="py-3 px-3 text-xs">
-                      <span className="px-2 py-0.5 rounded bg-[#eaedff] font-medium text-[#131b2e]">
-                        {tx.method}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-xs text-[#7b7487]">{tx.time}</td>
-                    <td
-                      className={`py-3 px-3 font-bold ${
-                        tx.type === 'receita' ? 'text-emerald-700' : 'text-rose-700'
-                      }`}
-                    >
-                      {tx.type === 'receita' ? '+' : '-'} R${' '}
-                      {tx.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-[0.6875rem] font-semibold ${
-                          tx.status === 'Aprovado'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-amber-100 text-amber-900'
-                        }`}
-                      >
-                        {tx.status}
-                      </span>
+                {filteredTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-[#7b7487]">
+                      <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
+                        <div className="w-12 h-12 rounded-xl bg-purple-50 text-[#630ed4] flex items-center justify-center mb-2">
+                          <span className="material-symbols-outlined text-[1.5rem]">account_balance_wallet</span>
+                        </div>
+                        <p className="font-bold text-slate-800 text-sm">Nenhuma movimentação registrada</p>
+                        <p className="text-xs text-slate-500 mt-0.5 mb-3">Os agendamentos e lançamentos financeiros aparecerão aqui em tempo real.</p>
+                        <button
+                          type="button"
+                          onClick={() => setIsNewTxModalOpen(true)}
+                          className="px-3.5 py-1.5 rounded-lg bg-[#7c3aed] text-white text-xs font-semibold hover:bg-[#630ed4] transition-all cursor-pointer"
+                        >
+                          + Novo Lançamento
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredTransactions.map((tx) => (
+                    <tr key={tx.id} className="hover:bg-[#f2f3ff]/40 transition-colors">
+                      <td className="py-3 px-3">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.6875rem] font-bold ${
+                            tx.type === 'receita'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[0.875rem]">
+                            {tx.type === 'receita' ? 'arrow_downward' : 'arrow_upward'}
+                          </span>
+                          {tx.type === 'receita' ? 'Entrada' : 'Saída'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 font-semibold text-[#131b2e]">
+                        {tx.clientOrBeneficiary}
+                      </td>
+                      <td className="py-3 px-3 text-xs text-[#4a4455]">{tx.serviceOrCategory}</td>
+                      <td className="py-3 px-3 text-xs text-[#630ed4] font-medium">
+                        {tx.professional || 'Geral'}
+                      </td>
+                      <td className="py-3 px-3 text-xs">
+                        <span className="px-2 py-0.5 rounded bg-[#eaedff] font-medium text-[#131b2e]">
+                          {tx.method}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-xs text-[#7b7487]">{tx.time}</td>
+                      <td
+                        className={`py-3 px-3 font-bold ${
+                          tx.type === 'receita' ? 'text-emerald-700' : 'text-rose-700'
+                        }`}
+                      >
+                        {tx.type === 'receita' ? '+' : '-'} R${' '}
+                        {tx.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[0.6875rem] font-semibold ${
+                            tx.status === 'Aprovado'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-900'
+                          }`}
+                        >
+                          {tx.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -362,90 +422,97 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
               </p>
             </div>
             <span className="text-xs font-bold text-[#630ed4] bg-[#eaedff] px-3 py-1.5 rounded-lg">
-              Período: 01/10 a 24/10
+              Mês Vigente
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {commissions.map((c) => (
-              <div
-                key={c.profId}
-                className="p-5 rounded-2xl bg-white border border-[#eaedff] shadow-sm flex flex-col justify-between gap-4 hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-full bg-[#eaddff] text-[#630ed4] flex items-center justify-center font-bold text-sm">
-                      {c.name.slice(0, 2).toUpperCase()}
+          {commissions.length === 0 ? (
+            <div className="p-10 bg-white rounded-2xl border border-[#eaedff] text-center">
+              <p className="font-bold text-slate-800 text-sm">Nenhum profissional cadastrado</p>
+              <p className="text-xs text-slate-500 mt-1">Cadastre os profissionais da sua equipe para acompanhar repasses de comissões.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {commissions.map((c) => (
+                <div
+                  key={c.profId}
+                  className="p-5 rounded-2xl bg-white border border-[#eaedff] shadow-sm flex flex-col justify-between gap-4 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-full bg-[#eaddff] text-[#630ed4] flex items-center justify-center font-bold text-sm">
+                        {c.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-sm text-[#131b2e] leading-snug">{c.name}</h3>
+                        <p className="text-xs text-[#7b7487]">{c.role}</p>
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded bg-[#f2f3ff] text-[#630ed4] text-[0.6875rem] font-bold">
+                          Taxa de comissão: {c.commissionRate}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                        c.isPaid
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-900'
+                      }`}
+                    >
+                      {c.isPaid ? 'Pago' : 'Pendente'}
+                    </span>
+                  </div>
+
+                  {/* Numbers breakdown */}
+                  <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-[#f8f9fa] border border-[#eaedff] text-center text-xs">
+                    <div>
+                      <span className="text-[0.6875rem] text-[#7b7487] block">Produção Bruta</span>
+                      <span className="font-bold text-[#131b2e] mt-0.5 block">
+                        R$ {c.totalProduced.toFixed(2)}
+                      </span>
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-[#131b2e] leading-snug">{c.name}</h3>
-                      <p className="text-xs text-[#7b7487]">{c.role}</p>
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded bg-[#f2f3ff] text-[#630ed4] text-[0.6875rem] font-bold">
-                        Taxa de comissão: {c.commissionRate}%
+                      <span className="text-[0.6875rem] text-[#7b7487] block">Atendimentos</span>
+                      <span className="font-bold text-[#630ed4] mt-0.5 block">
+                        {c.appointmentsCount} consultas
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[0.6875rem] text-[#7b7487] block">Repasse Líquido</span>
+                      <span className="font-extrabold text-emerald-700 mt-0.5 block">
+                        R$ {c.commissionTotal.toFixed(2)}
                       </span>
                     </div>
                   </div>
 
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                      c.isPaid
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-amber-100 text-amber-900'
-                    }`}
-                  >
-                    {c.isPaid ? 'Pago' : 'Pendente'}
-                  </span>
-                </div>
+                  {/* Actions */}
+                  <div className="flex items-center justify-between pt-2 border-t border-[#eaedff]">
+                    <button
+                      onClick={() => onTriggerToast(`Extrato analítico de procedimentos de ${c.name} gerado`)}
+                      className="text-xs font-semibold text-[#630ed4] hover:underline flex items-center gap-1 cursor-pointer"
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined text-[1rem]">receipt_long</span>
+                      Ver Extrato de Procedimentos
+                    </button>
 
-                {/* Numbers breakdown */}
-                <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-[#f8f9fa] border border-[#eaedff] text-center text-xs">
-                  <div>
-                    <span className="text-[0.6875rem] text-[#7b7487] block">Produção Bruta</span>
-                    <span className="font-bold text-[#131b2e] mt-0.5 block">
-                      R$ {c.totalProduced.toFixed(2)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[0.6875rem] text-[#7b7487] block">Atendimentos</span>
-                    <span className="font-bold text-[#630ed4] mt-0.5 block">
-                      {c.appointmentsCount} consultas
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[0.6875rem] text-[#7b7487] block">Repasse Líquido</span>
-                    <span className="font-extrabold text-emerald-700 mt-0.5 block">
-                      R$ {c.commissionTotal.toFixed(2)}
-                    </span>
+                    <button
+                      disabled={c.isPaid}
+                      onClick={() => handlePayCommission(c.profId, c.name)}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                        c.isPaid
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                      }`}
+                      type="button"
+                    >
+                      {c.isPaid ? 'Repasse Efetuado' : 'Dar Baixa no Repasse'}
+                    </button>
                   </div>
                 </div>
-
-                {/* Actions */}
-                <div className="flex items-center justify-between pt-2 border-t border-[#eaedff]">
-                  <button
-                    onClick={() => onTriggerToast(`Extrato analítico de procedimentos de ${c.name} gerado`)}
-                    className="text-xs font-semibold text-[#630ed4] hover:underline flex items-center gap-1"
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[1rem]">receipt_long</span>
-                    Ver Extrato de Procedimentos
-                  </button>
-
-                  <button
-                    disabled={c.isPaid}
-                    onClick={() => handlePayCommission(c.profId, c.name)}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      c.isPaid
-                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                    }`}
-                    type="button"
-                  >
-                    {c.isPaid ? 'Repasse Efetuado' : 'Dar Baixa no Repasse'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -465,7 +532,7 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
               </div>
               <button
                 onClick={() => setIsNewTxModalOpen(false)}
-                className="p-1 rounded-lg text-[#7b7487] hover:bg-[#f2f3ff]"
+                className="p-1 rounded-lg text-[#7b7487] hover:bg-[#f2f3ff] cursor-pointer"
                 type="button"
               >
                 <span className="material-symbols-outlined">close</span>
@@ -478,7 +545,7 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
                 <button
                   type="button"
                   onClick={() => setNewTx({ ...newTx, type: 'receita' })}
-                  className={`py-2 rounded-lg font-bold text-xs transition-all ${
+                  className={`py-2 rounded-lg font-bold text-xs transition-all cursor-pointer ${
                     newTx.type === 'receita'
                       ? 'bg-emerald-600 text-white shadow-xs'
                       : 'text-[#4a4455] hover:text-[#131b2e]'
@@ -489,7 +556,7 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
                 <button
                   type="button"
                   onClick={() => setNewTx({ ...newTx, type: 'despesa' })}
-                  className={`py-2 rounded-lg font-bold text-xs transition-all ${
+                  className={`py-2 rounded-lg font-bold text-xs transition-all cursor-pointer ${
                     newTx.type === 'despesa'
                       ? 'bg-rose-600 text-white shadow-xs'
                       : 'text-[#4a4455] hover:text-[#131b2e]'
@@ -532,7 +599,7 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
                   <select
                     value={newTx.method}
                     onChange={(e) => setNewTx({ ...newTx, method: e.target.value as Transaction['method'] })}
-                    className="h-10 px-3 rounded-lg bg-[#f8f9fa] border border-[#eaedff] text-xs font-semibold text-[#131b2e] outline-none"
+                    className="h-10 px-3 rounded-lg bg-[#f8f9fa] border border-[#eaedff] text-xs font-semibold text-[#131b2e] outline-none cursor-pointer"
                   >
                     <option value="PIX">PIX</option>
                     <option value="Cartão Crédito">Cartão de Crédito</option>
@@ -551,7 +618,7 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
                   type="text"
                   value={newTx.serviceOrCategory}
                   onChange={(e) => setNewTx({ ...newTx, serviceOrCategory: e.target.value })}
-                  placeholder={newTx.type === 'receita' ? 'Ex: Harmonização Facial' : 'Ex: Contas de Luz, Insumos...'}
+                  placeholder={newTx.type === 'receita' ? 'Ex: Corte e Barba' : 'Ex: Contas de Luz, Insumos...'}
                   className="h-10 px-3 rounded-lg bg-[#f8f9fa] border border-[#eaedff] text-sm text-[#131b2e] outline-none"
                 />
               </div>
@@ -562,13 +629,17 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
                   <select
                     value={newTx.professional}
                     onChange={(e) => setNewTx({ ...newTx, professional: e.target.value })}
-                    className="h-10 px-3 rounded-lg bg-[#f8f9fa] border border-[#eaedff] text-xs font-semibold text-[#131b2e] outline-none"
+                    className="h-10 px-3 rounded-lg bg-[#f8f9fa] border border-[#eaedff] text-xs font-semibold text-[#131b2e] outline-none cursor-pointer"
                   >
-                    {PROFESSIONALS_DATA.map((p) => (
-                      <option key={p.id} value={p.name}>
-                        {p.name}
-                      </option>
-                    ))}
+                    {professionals.length === 0 ? (
+                      <option value="Geral">Geral</option>
+                    ) : (
+                      professionals.map((p) => (
+                        <option key={p.id} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
               )}
@@ -577,13 +648,13 @@ export const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onTriggerToast }
                 <button
                   type="button"
                   onClick={() => setIsNewTxModalOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-[#eaedff] hover:bg-[#dae2fd] font-semibold text-[#131b2e]"
+                  className="px-4 py-2 rounded-lg bg-[#eaedff] hover:bg-[#dae2fd] font-semibold text-[#131b2e] cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-[#7c3aed] hover:bg-[#630ed4] font-semibold text-white shadow-xs"
+                  className="px-5 py-2 rounded-lg bg-[#7c3aed] hover:bg-[#630ed4] font-semibold text-white shadow-xs cursor-pointer"
                 >
                   Confirmar Lançamento
                 </button>
